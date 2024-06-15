@@ -28,4 +28,4 @@ ctr image mount --rw docker.io/library/python:latest rootfs
 ctr image unmount rootfs
 ```
 
-is nearly instant, but creates a read-only folder and the `--rw` doesn't seem to work.
+is nearly instant, but creates a read-only mount and the `--rw` doesn't seem to work, but still works as an oci image bundle with runsc.
