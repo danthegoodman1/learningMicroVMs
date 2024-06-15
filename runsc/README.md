@@ -13,3 +13,19 @@ Then
 ```
 bash cpu.sh
 ```
+
+
+## Building docker right to OCI bundle
+
+```
+docker build -o rootfs .
+```
+
+Will make rootfs. Takes a while though (6-9s).
+
+```
+ctr image mount --rw docker.io/library/python:latest rootfs
+ctr image unmount rootfs
+```
+
+is nearly instant, but creates a read-only folder and the `--rw` doesn't seem to work.
