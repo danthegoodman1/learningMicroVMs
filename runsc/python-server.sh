@@ -3,10 +3,11 @@
 rm -rf rootfs
 rm config.json
 sudo mkdir rootfs
-sudo docker export $(docker create python) | sudo tar --same-owner -pxf - -C rootfs
+# this command is slow on both sides, far longer than starting a new docker container
+time sudo docker export $(docker create python) | sudo tar --same-owner -pxf - -C rootfs
 sudo mkdir -p rootfs/var/www/html
 sudo sh -c 'echo "Hello World!" > rootfs/var/www/html/index.html'
 
 runsc spec -- python -m http.server
 
-sudo runsc run -detach -pid-file pid.txt server
+time sudo runsc run -detach -pid-file pid.txt server
