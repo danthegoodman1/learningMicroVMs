@@ -29,3 +29,11 @@ Then can run with
 ```
 runc run -b rootfs container-name
 ```
+
+## Linux namespaces
+
+another way to control untrusted code is name spaces
+
+https://blog.nginx.org/blog/what-are-namespaces-cgroups-how-do-they-work
+
+can use https://man7.org/linux/man-pages/man1/unshare.1.html to create namespaces on demand that are cleaned up
