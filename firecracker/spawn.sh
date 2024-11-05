@@ -59,6 +59,7 @@ sudo curl -X PUT --unix-socket "${API_SOCKET}" \
     }" \
     "http://localhost/boot-source"
 
+# apparently this could also be a .cpio https://www.gnu.org/software/cpio/manual/html_node/Tutorial.html#Tutorial
 ROOTFS="./rootfs.ext4"
 
 # Set rootfs
