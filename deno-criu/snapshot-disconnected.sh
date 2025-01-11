@@ -1,4 +1,5 @@
 # https://criu.org/Simple_loop
+# not working yet on restore
 set -e
 
 PID=$(ps aux | grep deno | grep -v grep | awk '{print $2}')
