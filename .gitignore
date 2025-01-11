@@ -1,3 +1,6 @@
 checkpointing/rootfs
 checkpointing/pid.txt
 checkpointing/ckpt
+runc-network/rootfs
+runc-network/pid.txt
+runc-network/ckpt
