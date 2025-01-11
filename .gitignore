@@ -3,3 +3,6 @@ checkpointing/pid.txt
 checkpointing/ckpt
 
 deno-criu/images
+runc-network/rootfs
+runc-network/pid.txt
+runc-network/ckpt
