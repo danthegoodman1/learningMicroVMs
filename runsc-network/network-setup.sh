@@ -1,3 +1,5 @@
+sudo rm /run/netns/test_net # reboot this is the only thing left over
+
 sudo ip netns add test_net
 
 sudo ip link add name veth-host type veth peer name veth-test
