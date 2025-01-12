@@ -8,3 +8,7 @@ runc-network/pid.txt
 runc-network/ckpt
 
 node_modules
+
+runsc-network/rootfs
+runsc-network/pid.txt
+runsc-network/ckpt
