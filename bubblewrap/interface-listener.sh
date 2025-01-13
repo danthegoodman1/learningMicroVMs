@@ -6,7 +6,7 @@ sudo ip link set veth-sandbox netns $(cat /tmp/pid)
 sudo ip addr add 192.168.1.1/24 dev veth-host
 sudo ip link set veth-host up
 
-# on sandbox:
+# on sandbox (maybe can do this on host first?):
 ip addr add 192.168.1.2/24 dev veth-sandbox
 ip link set veth-sandbox up
 ip link set lo up
