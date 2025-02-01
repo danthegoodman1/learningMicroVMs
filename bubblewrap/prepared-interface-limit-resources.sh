@@ -1,6 +1,3 @@
-# This example prepares a network namespace with a veth pair and a NAT rule.
-# It then launches bubblewrap inside the namespace with the preconfigured network so that the sandbox can access the internet but not the host, and can also listen such that the host can connect to it.
-
 #!/bin/bash
 set -e
 
@@ -11,6 +8,7 @@ VETH_SANDBOX="veth-sandbox"
 HOST_IP="192.168.1.1/24"
 SANDBOX_IP="192.168.1.2/24"
 GATEWAY="192.168.1.1"
+CGROUP_UNIT="my-cgroup-name"
 
 # --- Determine external interface for NAT ---
 EXT_IF=$(ip route | grep '^default' | awk '{print $5}' | head -n1)
@@ -18,7 +16,6 @@ if [ -z "$EXT_IF" ]; then
     echo "Could not determine external interface; please set EXT_IF manually."
     exit 1
 fi
-
 echo "Using external interface: $EXT_IF"
 
 # --- Create the persistent network namespace ---
@@ -45,12 +42,20 @@ sudo sysctl -w net.ipv4.ip_forward=1
 sudo iptables -t nat -A POSTROUTING -s 192.168.1.0/24 -o "$EXT_IF" -j MASQUERADE
 
 echo "Network namespace '$NS_NAME' and veth interfaces configured."
-echo "Launching bubblewrap in namespace '$NS_NAME'. Type 'curl 1.1.1.1' inside the shell to test connectivity."
-echo "Type 'exit' to quit the bubblewrap shell."
+echo "Launching bubblewrap in namespace '$NS_NAME' with resource limits."
+echo "Inside the bubblewrap shell, you should be able to run 'curl 1.1.1.1' to test Internet connectivity."
+echo "Type 'exit' to quit the shell."
 
-# --- Launch bubblewrap inside the preconfigured network namespace ---
-# We do NOT unshare the network namespace (i.e. we use --share-net) so that the preconfiguration is preserved.
-sudo ip netns exec "$NS_NAME" bwrap --new-session \
+# --- Launch bubblewrap with systemd-run resource limits ---
+# We run bubblewrap inside the preconfigured namespace (via 'ip netns exec')
+# and use systemd-run --scope to apply cgroup limits.
+# 1% to show that limiting works (will be super slow)
+sudo ip netns exec "$NS_NAME" systemd-run --scope \
+  -p "Delegate=yes" \
+  -p "MemoryLimit=500M" \
+  -p "CPUQuota=1%" \
+  --unit="$CGROUP_UNIT" \
+  sudo ip netns exec "$NS_NAME" bwrap --new-session \
     --unshare-pid \
     --unshare-uts \
     --unshare-ipc \
@@ -65,9 +70,14 @@ sudo ip netns exec "$NS_NAME" bwrap --new-session \
     --proc /proc \
     /bin/bash
 
-# this works too
-sudo ip netns exec "$NS_NAME" bwrap --new-session --dev-bind / / --share-net bash
+# This works too
+# sudo ip netns exec "$NS_NAME" systemd-run --scope \
+#   -p "Delegate=yes" \
+#   -p "MemoryLimit=500M" \
+#   -p "CPUQuota=1%" \
+#   --unit="$CGROUP_UNIT" \
+#   sudo ip netns exec "$NS_NAME" bwrap --new-session --dev-bind / / --share-net bash
 
-# Optionally, when done, you can clean up:
-# sudo ip netns delete "$NS_NAME"
-# sudo ip link delete "$VETH_HOST" # this will likely be not found since the ns is deleted
+# --- Cleanup instructions (optional) ---
+# When finished, you can remove the namespace and veth interface with:
+sudo ip netns delete "$NS_NAME"
