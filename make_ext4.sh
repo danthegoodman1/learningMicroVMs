@@ -3,10 +3,17 @@
 # Variables
 ROOTFS_DIR="./rootfs"
 IMAGE_FILE="rootfs.ext4"
-IMAGE_SIZE_MB=100  # Adjust size as needed, larger than image
 TEMP_MOUNT_DIR="/mnt/tempfs"
 
 echo "nameserver 8.8.8.8" >> $ROOTFS_DIR/etc/resolv.conf
+
+# Calculate image size dynamically based on content
+CONTENT_SIZE=$(du -sm ${ROOTFS_DIR} | cut -f1)
+OVERHEAD_PERCENT=20
+IMAGE_SIZE_MB=$((CONTENT_SIZE * (100 + OVERHEAD_PERCENT) / 100))
+
+echo "Content size: ${CONTENT_SIZE}MB"
+echo "Creating ${IMAGE_SIZE_MB}MB image (with ${OVERHEAD_PERCENT}% overhead)"
 
 # Step 1: Create an empty file
 dd if=/dev/zero of=${IMAGE_FILE} bs=1M count=${IMAGE_SIZE_MB}
