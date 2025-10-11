@@ -1,3 +1,8 @@
+#!/bin/bash
+
+# This script boots a Firecracker VM with an overlay filesystem for security
+# Base rootfs is read-only, changes go to overlay (tmpfs or persistent disk)
+
 TAP_DEV="tap0"
 TAP_IP="172.16.0.1"
 MASK_SHORT="/30"
@@ -39,7 +44,7 @@ sudo curl -X PUT --unix-socket "${API_SOCKET}" \
     "http://localhost/logger"
 
 KERNEL="./vmlinux-5.10.217"
-KERNEL_BOOT_ARGS="console=ttyS0 reboot=k panic=1 pci=off"
+KERNEL_BOOT_ARGS="console=ttyS0 reboot=k panic=1 pci=off init=/overlay-init.sh"
 
 FC_IP="172.16.0.2"
 MASK_LONG="255.255.255.0"
@@ -59,30 +64,52 @@ sudo curl -X PUT --unix-socket "${API_SOCKET}" \
     }" \
     "http://localhost/boot-source"
 
-# apparently this could also be a .cpio https://www.gnu.org/software/cpio/manual/html_node/Tutorial.html#Tutorial
 ROOTFS="./rootfs.ext4"
 
-# Set rootfs
+# Set rootfs as READ-ONLY for security
 sudo curl -X PUT --unix-socket "${API_SOCKET}" \
     --data "{
         \"drive_id\": \"rootfs\",
         \"path_on_host\": \"${ROOTFS}\",
         \"is_root_device\": true,
-        \"is_read_only\": false
+        \"is_read_only\": true
     }" \
     "http://localhost/drives/rootfs"
 
-# Optional: Add a secondary drive to mount at /mnt/somedir
-# Set MOUNT_IMG to the path of the image/filesystem you want to mount
-# Example: MOUNT_IMG="./data.ext4"
-if [ -n "${MOUNT_IMG}" ]; then
-    echo "Adding secondary drive: ${MOUNT_IMG}"
+# OVERLAY_MODE can be: "tmpfs" (ephemeral, in-memory) or "persistent" (disk-backed)
+# Default to tmpfs for maximum security
+OVERLAY_MODE="${OVERLAY_MODE:-tmpfs}"
+
+if [ "${OVERLAY_MODE}" = "persistent" ] && [ -n "${OVERLAY_IMG}" ]; then
+    echo "Using persistent overlay: ${OVERLAY_IMG}"
+    sudo curl -X PUT --unix-socket "${API_SOCKET}" \
+        --data "{
+            \"drive_id\": \"overlay\",
+            \"path_on_host\": \"${OVERLAY_IMG}\",
+            \"is_root_device\": false,
+            \"is_read_only\": false
+        }" \
+        "http://localhost/drives/overlay"
+else
+    echo "Using tmpfs overlay (ephemeral, changes lost on reboot)"
+    OVERLAY_MODE="tmpfs"
+fi
+
+# Optional: Add an extra data drive to mount at /mnt/data (or wherever you want)
+# Set DATA_IMG to mount an additional drive (will be /dev/vdb with tmpfs, or /dev/vdc with persistent overlay)
+if [ -n "${DATA_IMG}" ]; then
+    if [ "${OVERLAY_MODE}" = "tmpfs" ]; then
+        DRIVE_DEVICE="vdb"
+    else
+        DRIVE_DEVICE="vdc"
+    fi
+    echo "Adding data drive: ${DATA_IMG} (will appear as /dev/${DRIVE_DEVICE})"
     sudo curl -X PUT --unix-socket "${API_SOCKET}" \
         --data "{
             \"drive_id\": \"data\",
-            \"path_on_host\": \"${MOUNT_IMG}\",
+            \"path_on_host\": \"${DATA_IMG}\",
             \"is_root_device\": false,
-            \"is_read_only\": false
+            \"is_read_only\": true
         }" \
         "http://localhost/drives/data"
 fi
@@ -116,25 +143,42 @@ sudo curl -X PUT --unix-socket "${API_SOCKET}" \
 # started before we attempt to SSH into it.
 sleep 5s
 
+echo ""
+echo "=========================================="
+echo "Firecracker VM started with overlay mode: ${OVERLAY_MODE}"
+if [ "${OVERLAY_MODE}" = "tmpfs" ]; then
+    echo "⚠️  All changes will be LOST on reboot (ephemeral)"
+else
+    echo "💾 Changes will persist to: ${OVERLAY_IMG}"
+fi
+echo "=========================================="
+echo ""
+
 # SSH into the microVM
 # ssh -i ./ubuntu-22.04.id_rsa root@172.16.0.2
 
-# ===== USAGE INSTRUCTIONS FOR MOUNTING SECONDARY DRIVE =====
+# ===== USAGE INSTRUCTIONS =====
 #
-# 1. Set MOUNT_IMG environment variable before running this script:
-#    export MOUNT_IMG="./data.ext4"
-#    ./spawn_with_mount.sh
+# EPHEMERAL MODE (default, most secure for untrusted users):
+#   ./spawn_overlay.sh
+#   - Rootfs is read-only
+#   - All changes stored in RAM (tmpfs)
+#   - Everything resets on reboot
 #
-# 2. The secondary drive will appear as /dev/vdb in the guest VM
+# PERSISTENT MODE (if you need to keep some data):
+#   OVERLAY_MODE=persistent OVERLAY_IMG=./overlay.ext4 ./spawn_overlay.sh
+#   - Rootfs is read-only
+#   - Changes stored on disk
+#   - Persists across reboots
 #
-# 3. To mount it in the guest, SSH in and run:
-#    mkdir -p /mnt/somedir
-#    mount /dev/vdb /mnt/somedir
+# WITH EXTRA DATA DRIVE:
+#   DATA_IMG=./data.ext4 ./spawn_overlay.sh
+#   - Automatically mounts at /mnt/data inside the VM
+#   - Uses /dev/vdb (tmpfs mode) or /dev/vdc (persistent mode)
+#   - Use for separate data volumes that persist independently
 #
-# 4. To auto-mount at boot, add this to /etc/fstab in your rootfs:
-#    /dev/vdb  /mnt/somedir  ext4  defaults  0  2
-#
-# 5. Or create an init script in your rootfs at /etc/rc.local or similar:
-#    #!/bin/sh
-#    mkdir -p /mnt/somedir
-#    mount /dev/vdb /mnt/somedir
+# SECURITY BENEFITS:
+# - Base system cannot be modified permanently
+# - Easy to reset: just reboot (tmpfs) or delete overlay disk
+# - No way for untrusted user to persist malware in base system
+# - Fast rollback to clean state
