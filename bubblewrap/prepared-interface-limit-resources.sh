@@ -49,11 +49,12 @@ echo "Type 'exit' to quit the shell."
 # --- Launch bubblewrap with systemd-run resource limits ---
 # We run bubblewrap inside the preconfigured namespace (via 'ip netns exec')
 # and use systemd-run --scope to apply cgroup limits.
-# 1% to show that limiting works (will be super slow)
+# 100ms per 1s (10% CPU)
 sudo ip netns exec "$NS_NAME" systemd-run --scope \
   -p "Delegate=yes" \
   -p "MemoryLimit=500M" \
-  -p "CPUQuota=1%" \
+  -p "CPUQuotaPeriodSec=1s" \
+  -p "CPUQuota=10%" \
   --unit="$CGROUP_UNIT" \
   sudo ip netns exec "$NS_NAME" bwrap --new-session \
     --unshare-pid \
@@ -74,7 +75,8 @@ sudo ip netns exec "$NS_NAME" systemd-run --scope \
 # sudo ip netns exec "$NS_NAME" systemd-run --scope \
 #   -p "Delegate=yes" \
 #   -p "MemoryLimit=500M" \
-#   -p "CPUQuota=1%" \
+#   -p "CPUQuotaPeriodSec=1s" \
+#   -p "CPUQuota=10%" \
 #   --unit="$CGROUP_UNIT" \
 #   sudo ip netns exec "$NS_NAME" bwrap --new-session --dev-bind / / --share-net bash
 
