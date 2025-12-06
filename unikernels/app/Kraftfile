@@ -1,0 +1,27 @@
+spec: v0.6
+
+name: hello-metadata
+
+unikraft:
+  version: stable
+  kconfig:
+    # Console output
+    CONFIG_LIBUKDEBUG_PRINTK: "y"
+    CONFIG_LIBUKDEBUG_PRINTD: "y"
+    
+    # Networking
+    CONFIG_LIBUKNETDEV: "y"
+    CONFIG_LWIP: "y"
+    CONFIG_LWIP_IPV4: "y"
+    CONFIG_LWIP_TCP: "y"
+    CONFIG_LWIP_SOCKET: "y"
+
+libraries:
+  lwip:
+    version: stable
+
+targets:
+  - plat: fc
+    arch: x86_64
+  - plat: qemu
+    arch: x86_64
