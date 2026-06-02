@@ -1,10 +1,13 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Firecracker VM spawn script with metadata service support
 #
 # The VM can access a metadata service at 169.254.169.254:80
 # similar to AWS EC2's instance metadata service.
 
-set -e
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../common.sh"
 
 # --- VM Identity (change this per VM instance) ---
 VM_ID="${VM_ID:-vm-001}"
@@ -35,11 +38,7 @@ sudo ip link set dev "$TAP_DEV" up
 sudo sh -c "echo 1 > /proc/sys/net/ipv4/ip_forward"
 
 # --- Detect host interface for NAT ---
-HOST_IFACE=$(ip route | grep '^default' | awk '{print $5}' | head -n1)
-if [ -z "$HOST_IFACE" ]; then
-    HOST_IFACE="eth0"
-    echo "Warning: Could not detect default interface, using $HOST_IFACE"
-fi
+HOST_IFACE="$(fc_host_iface)"
 echo "Using host interface: $HOST_IFACE"
 
 # --- Set up NAT for internet access ---
@@ -51,22 +50,20 @@ sudo iptables -I FORWARD 1 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 sudo iptables -I FORWARD 1 -i "$TAP_DEV" -o "$HOST_IFACE" -j ACCEPT
 
 # --- Firecracker API setup ---
-API_SOCKET="/tmp/firecracker.socket"
-LOGFILE="./firecracker.log"
+API_SOCKET="${API_SOCKET:-/tmp/firecracker.socket}"
+LOGFILE="${LOGFILE:-$SCRIPT_DIR/firecracker.log}"
 
 touch $LOGFILE
 
-sudo curl -X PUT --unix-socket "${API_SOCKET}" \
-    --data "{
+fc_api_put "logger" "{
         \"log_path\": \"${LOGFILE}\",
         \"level\": \"Debug\",
         \"show_level\": true,
         \"show_log_origin\": true
-    }" \
-    "http://localhost/logger"
+    }"
 
 # --- Kernel configuration ---
-KERNEL="./vmlinux-5.10.217"
+KERNEL="$(fc_find_kernel)"
 KERNEL_BOOT_ARGS="console=ttyS0 reboot=k panic=1 pci=off"
 KERNEL_BOOT_ARGS="${KERNEL_BOOT_ARGS} ip=${FC_IP}::${TAP_IP}:${MASK_LONG}::eth0:off"
 
@@ -75,44 +72,39 @@ if [ ${ARCH} = "aarch64" ]; then
     KERNEL_BOOT_ARGS="keep_bootcon ${KERNEL_BOOT_ARGS}"
 fi
 
-sudo curl -X PUT --unix-socket "${API_SOCKET}" \
-    --data "{
+fc_api_put "boot-source" "{
         \"kernel_image_path\": \"${KERNEL}\",
         \"boot_args\": \"${KERNEL_BOOT_ARGS}\"
-    }" \
-    "http://localhost/boot-source"
+    }"
 
 # --- Root filesystem ---
-ROOTFS="./rootfs.ext4"
+ROOTFS="$(fc_find_rootfs)"
 
-sudo curl -X PUT --unix-socket "${API_SOCKET}" \
-    --data "{
+fc_api_put "drives/rootfs" "{
         \"drive_id\": \"rootfs\",
         \"path_on_host\": \"${ROOTFS}\",
         \"is_root_device\": true,
         \"is_read_only\": false
-    }" \
-    "http://localhost/drives/rootfs"
+    }"
 
 # --- Network interface ---
 FC_MAC="06:00:AC:10:00:02"
 
-sudo curl -X PUT --unix-socket "${API_SOCKET}" \
-    --data "{
+fc_api_put "network-interfaces/eth0" "{
         \"iface_id\": \"eth0\",
         \"guest_mac\": \"$FC_MAC\",
         \"host_dev_name\": \"$TAP_DEV\"
-    }" \
-    "http://localhost/network-interfaces/eth0"
+    }"
 
 sleep 0.015s
 
 # --- Start microVM ---
-sudo curl -X PUT --unix-socket "${API_SOCKET}" \
-    --data "{
+fc_api_put "actions" "{
         \"action_type\": \"InstanceStart\"
-    }" \
-    "http://localhost/actions"
+    }"
+
+sleep 5s
+fc_configure_guest_network "$FC_IP" "$TAP_IP"
 
 echo ""
 echo "========================================"
@@ -132,5 +124,5 @@ echo "  curl http://$METADATA_IP/"
 echo "  curl http://$METADATA_IP/instance-id"
 echo ""
 echo "SSH into VM:"
-echo "  ssh -i ./ubuntu-22.04.id_rsa root@$FC_IP"
+echo "  ssh -i $(fc_find_ssh_key) root@$FC_IP"
 echo ""

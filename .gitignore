@@ -8,3 +8,13 @@ runc-network/pid.txt
 runc-network/ckpt
 
 node_modules
+
+firecracker/firecracker
+firecracker/firecracker-v*-*.tgz
+firecracker/release-v*-*/
+firecracker/ubuntu-22.04.ext4
+firecracker/ubuntu-22.04.id_rsa
+firecracker/vmlinux-*
+firecracker/*.log
+firecracker/with_metadata/*.log
+firecracker/with_mounting/*.log

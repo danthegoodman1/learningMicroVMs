@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Spawn a Firecracker VM with a unique identity
 #
 # Usage: ./spawn-multi.sh <vm-number>
@@ -10,7 +10,10 @@
 #   - IP subnet (172.16.0.x, 172.16.1.x, ...)
 #   - API socket (/tmp/firecracker-N.socket)
 
-set -e
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../common.sh"
 
 if [ -z "$1" ]; then
     echo "Usage: $0 <vm-number>"
@@ -32,7 +35,7 @@ MASK_LONG="255.255.255.0"
 FC_MAC=$(printf "06:00:AC:10:%02X:02" "$((VM_NUM - 1))")
 
 # Firecracker socket (unique per VM)
-API_SOCKET="/tmp/firecracker-${VM_NUM}.socket"
+API_SOCKET="${API_SOCKET:-/tmp/firecracker-${VM_NUM}.socket}"
 
 # Metadata IP (shared across all VMs)
 METADATA_IP="169.254.169.254"
@@ -50,7 +53,7 @@ if [ ! -S "$API_SOCKET" ]; then
     echo "Error: Firecracker socket not found at $API_SOCKET"
     echo ""
     echo "Start firecracker first:"
-    echo "  sudo firecracker --api-sock $API_SOCKET"
+    echo "  sudo $(fc_find_firecracker) --api-sock $API_SOCKET"
     exit 1
 fi
 
@@ -70,10 +73,8 @@ sudo ip link set dev "$TAP_DEV" up
 sudo sh -c "echo 1 > /proc/sys/net/ipv4/ip_forward"
 
 # --- Detect host interface for NAT ---
-HOST_IFACE=$(ip route | grep '^default' | awk '{print $5}' | head -n1)
-if [ -z "$HOST_IFACE" ]; then
-    HOST_IFACE="eth0"
-fi
+HOST_IFACE="$(fc_host_iface)"
+echo "Using host interface: $HOST_IFACE"
 
 # --- Set up NAT (only needs to be done once, but idempotent) ---
 if ! sudo iptables -t nat -C POSTROUTING -o "$HOST_IFACE" -j MASQUERADE 2>/dev/null; then
@@ -86,20 +87,18 @@ sudo iptables -I FORWARD 1 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 
 sudo iptables -I FORWARD 1 -i "$TAP_DEV" -o "$HOST_IFACE" -j ACCEPT
 
 # --- Firecracker API setup ---
-LOGFILE="./firecracker-${VM_NUM}.log"
+LOGFILE="${LOGFILE:-$SCRIPT_DIR/firecracker-${VM_NUM}.log}"
 touch "$LOGFILE"
 
-sudo curl -X PUT --unix-socket "${API_SOCKET}" \
-    --data "{
+fc_api_put "logger" "{
         \"log_path\": \"${LOGFILE}\",
         \"level\": \"Debug\",
         \"show_level\": true,
         \"show_log_origin\": true
-    }" \
-    "http://localhost/logger"
+    }"
 
 # --- Kernel configuration ---
-KERNEL="./vmlinux-5.10.217"
+KERNEL="$(fc_find_kernel)"
 KERNEL_BOOT_ARGS="console=ttyS0 reboot=k panic=1 pci=off"
 KERNEL_BOOT_ARGS="${KERNEL_BOOT_ARGS} ip=${FC_IP}::${TAP_IP}:${MASK_LONG}::eth0:off"
 
@@ -108,51 +107,42 @@ if [ ${ARCH} = "aarch64" ]; then
     KERNEL_BOOT_ARGS="keep_bootcon ${KERNEL_BOOT_ARGS}"
 fi
 
-sudo curl -X PUT --unix-socket "${API_SOCKET}" \
-    --data "{
+fc_api_put "boot-source" "{
         \"kernel_image_path\": \"${KERNEL}\",
         \"boot_args\": \"${KERNEL_BOOT_ARGS}\"
-    }" \
-    "http://localhost/boot-source"
+    }"
 
 # --- Root filesystem (use a copy for each VM for isolation) ---
-ROOTFS="./rootfs.ext4"
-if [ ! -f "$ROOTFS" ]; then
-    echo "Error: Root filesystem not found: $ROOTFS"
-    exit 1
-fi
+ROOTFS="$(fc_find_rootfs)"
 
-sudo curl -X PUT --unix-socket "${API_SOCKET}" \
-    --data "{
+fc_api_put "drives/rootfs" "{
         \"drive_id\": \"rootfs\",
         \"path_on_host\": \"${ROOTFS}\",
         \"is_root_device\": true,
         \"is_read_only\": false
-    }" \
-    "http://localhost/drives/rootfs"
+    }"
 
 # --- Network interface ---
-sudo curl -X PUT --unix-socket "${API_SOCKET}" \
-    --data "{
+fc_api_put "network-interfaces/eth0" "{
         \"iface_id\": \"eth0\",
         \"guest_mac\": \"$FC_MAC\",
         \"host_dev_name\": \"$TAP_DEV\"
-    }" \
-    "http://localhost/network-interfaces/eth0"
+    }"
 
 sleep 0.015s
 
 # --- Start microVM ---
-sudo curl -X PUT --unix-socket "${API_SOCKET}" \
-    --data "{
+fc_api_put "actions" "{
         \"action_type\": \"InstanceStart\"
-    }" \
-    "http://localhost/actions"
+    }"
+
+sleep 5s
+fc_configure_guest_network "$FC_IP" "$TAP_IP"
 
 echo ""
 echo "$VM_ID started!"
 echo ""
-echo "SSH:      ssh -i ./ubuntu-22.04.id_rsa root@$FC_IP"
+echo "SSH:      ssh -i $(fc_find_ssh_key) root@$FC_IP"
 echo "Metadata: curl http://169.254.169.254/instance-id (from inside VM)"
 echo ""
 echo "Don't forget to add this VM to metadata-server.sh:"

@@ -1,4 +1,9 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../common.sh"
 
 # This script boots a Firecracker VM with an overlay filesystem for security
 # Base rootfs is read-only, changes go to overlay (tmpfs or persistent disk)
@@ -16,7 +21,8 @@ sudo ip link set dev "$TAP_DEV" up
 # Enable ip forwarding
 sudo sh -c "echo 1 > /proc/sys/net/ipv4/ip_forward"
 
-HOST_IFACE="eth0"
+HOST_IFACE="$(fc_host_iface)"
+echo "Using host interface: $HOST_IFACE"
 
 # Set up microVM internet access
 sudo iptables -t nat -D POSTROUTING -o "$HOST_IFACE" -j MASQUERADE || true
@@ -27,23 +33,21 @@ sudo iptables -t nat -A POSTROUTING -o "$HOST_IFACE" -j MASQUERADE
 sudo iptables -I FORWARD 1 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 sudo iptables -I FORWARD 1 -i tap0 -o "$HOST_IFACE" -j ACCEPT
 
-API_SOCKET="/tmp/firecracker.socket"
-LOGFILE="./firecracker.log"
+API_SOCKET="${API_SOCKET:-/tmp/firecracker.socket}"
+LOGFILE="${LOGFILE:-$SCRIPT_DIR/firecracker.log}"
 
 # Create log file
 touch $LOGFILE
 
 # Set log file
-sudo curl -X PUT --unix-socket "${API_SOCKET}" \
-    --data "{
+fc_api_put "logger" "{
         \"log_path\": \"${LOGFILE}\",
         \"level\": \"Debug\",
         \"show_level\": true,
         \"show_log_origin\": true
-    }" \
-    "http://localhost/logger"
+    }"
 
-KERNEL="./vmlinux-5.10.217"
+KERNEL="$(fc_find_kernel)"
 KERNEL_BOOT_ARGS="console=ttyS0 reboot=k panic=1 pci=off init=/overlay-init.sh"
 
 FC_IP="172.16.0.2"
@@ -57,24 +61,20 @@ if [ ${ARCH} = "aarch64" ]; then
 fi
 
 # Set boot source
-sudo curl -X PUT --unix-socket "${API_SOCKET}" \
-    --data "{
+fc_api_put "boot-source" "{
         \"kernel_image_path\": \"${KERNEL}\",
         \"boot_args\": \"${KERNEL_BOOT_ARGS}\"
-    }" \
-    "http://localhost/boot-source"
+    }"
 
-ROOTFS="./rootfs.ext4"
+ROOTFS="$(fc_find_rootfs)"
 
 # Set rootfs as READ-ONLY for security
-sudo curl -X PUT --unix-socket "${API_SOCKET}" \
-    --data "{
+fc_api_put "drives/rootfs" "{
         \"drive_id\": \"rootfs\",
         \"path_on_host\": \"${ROOTFS}\",
         \"is_root_device\": true,
         \"is_read_only\": true
-    }" \
-    "http://localhost/drives/rootfs"
+    }"
 
 # OVERLAY_MODE can be: "tmpfs" (ephemeral, in-memory) or "persistent" (disk-backed)
 # Default to tmpfs for maximum security
@@ -82,14 +82,12 @@ OVERLAY_MODE="${OVERLAY_MODE:-tmpfs}"
 
 if [ "${OVERLAY_MODE}" = "persistent" ] && [ -n "${OVERLAY_IMG}" ]; then
     echo "Using persistent overlay: ${OVERLAY_IMG}"
-    sudo curl -X PUT --unix-socket "${API_SOCKET}" \
-        --data "{
+    fc_api_put "drives/overlay" "{
             \"drive_id\": \"overlay\",
             \"path_on_host\": \"${OVERLAY_IMG}\",
             \"is_root_device\": false,
             \"is_read_only\": false
-        }" \
-        "http://localhost/drives/overlay"
+        }"
 else
     echo "Using tmpfs overlay (ephemeral, changes lost on reboot)"
     OVERLAY_MODE="tmpfs"
@@ -97,21 +95,19 @@ fi
 
 # Optional: Add an extra data drive to mount at /mnt/data (or wherever you want)
 # Set DATA_IMG to mount an additional drive (will be /dev/vdb with tmpfs, or /dev/vdc with persistent overlay)
-if [ -n "${DATA_IMG}" ]; then
+if [ -n "${DATA_IMG:-}" ]; then
     if [ "${OVERLAY_MODE}" = "tmpfs" ]; then
         DRIVE_DEVICE="vdb"
     else
         DRIVE_DEVICE="vdc"
     fi
     echo "Adding data drive: ${DATA_IMG} (will appear as /dev/${DRIVE_DEVICE})"
-    sudo curl -X PUT --unix-socket "${API_SOCKET}" \
-        --data "{
+    fc_api_put "drives/data" "{
             \"drive_id\": \"data\",
             \"path_on_host\": \"${DATA_IMG}\",
             \"is_root_device\": false,
             \"is_read_only\": true
-        }" \
-        "http://localhost/drives/data"
+        }"
 fi
 
 # The IP address of a guest is derived from its MAC address with
@@ -120,28 +116,25 @@ fi
 FC_MAC="06:00:AC:10:00:02"
 
 # Set network interface
-sudo curl -X PUT --unix-socket "${API_SOCKET}" \
-    --data "{
+fc_api_put "network-interfaces/eth0" "{
         \"iface_id\": \"eth0\",
         \"guest_mac\": \"$FC_MAC\",
         \"host_dev_name\": \"$TAP_DEV\"
-    }" \
-    "http://localhost/network-interfaces/eth0"
+    }"
 
 # API requests are handled asynchronously, it is important the configuration is
 # set, before `InstanceStart`.
 sleep 0.015s
 
 # Start microVM
-sudo curl -X PUT --unix-socket "${API_SOCKET}" \
-    --data "{
+fc_api_put "actions" "{
         \"action_type\": \"InstanceStart\"
-    }" \
-    "http://localhost/actions"
+    }"
 
 # API requests are handled asynchronously, it is important the microVM has been
 # started before we attempt to SSH into it.
 sleep 5s
+fc_configure_guest_network "$FC_IP" "$TAP_IP"
 
 echo ""
 echo "=========================================="

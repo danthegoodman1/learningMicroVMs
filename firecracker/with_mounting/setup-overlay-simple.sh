@@ -28,49 +28,47 @@ sudo tee "$MOUNT_POINT/overlay-init.sh" > /dev/null << 'EOF'
 echo "=== Starting overlay init ==="
 
 # Mount essential filesystems
-mount -t proc proc /proc
-mount -t sysfs sysfs /sys
-mount -t devtmpfs devtmpfs /dev
+mount -t proc proc /proc 2>/dev/null || true
+mount -t sysfs sysfs /sys 2>/dev/null || true
+mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
 
-# Create directories
-mkdir -p /overlay/lower /overlay/upper /overlay/work /overlay/merged
-
-# Root is already mounted, move it to lower
+# Root is already mounted read-only. Use /run as a tmpfs staging area because
+# it already exists on the base image and can be mounted over without writing
+# to the read-only root.
 mount --make-rprivate /
-mount --bind / /overlay/lower
+mount -t tmpfs -o size=2G tmpfs /run
+STAGING="/run/overlay-root"
+mkdir -p "$STAGING/merged"
 
 # Set up upper layer (writable overlay)
 if [ -b /dev/vdb ]; then
     echo "Using persistent overlay on /dev/vdb"
-    mount /dev/vdb /overlay/upper
-    mkdir -p /overlay/upper/data /overlay/upper/work
-    UPPER="/overlay/upper/data"
-    WORK="/overlay/upper/work"
+    mkdir -p "$STAGING/persistent"
+    mount /dev/vdb "$STAGING/persistent"
+    mkdir -p "$STAGING/persistent/data" "$STAGING/persistent/work"
+    UPPER="$STAGING/persistent/data"
+    WORK="$STAGING/persistent/work"
     DATA_DEVICE="/dev/vdc"
 else
     echo "Using tmpfs overlay (ephemeral)"
-    mount -t tmpfs -o size=2G tmpfs /overlay/upper
-    mkdir -p /overlay/upper/data /overlay/upper/work
-    UPPER="/overlay/upper/data"
-    WORK="/overlay/upper/work"
+    mkdir -p "$STAGING/upper" "$STAGING/work"
+    UPPER="$STAGING/upper"
+    WORK="$STAGING/work"
     DATA_DEVICE="/dev/vdb"
 fi
 
 # Create the overlay
-mount -t overlay overlay -o lowerdir=/overlay/lower,upperdir=$UPPER,workdir=$WORK /overlay/merged
+mount -t overlay overlay -o lowerdir=/,upperdir=$UPPER,workdir=$WORK "$STAGING/merged"
 
 # Prepare for pivot
-cd /overlay/merged
-mkdir -p /overlay/merged/overlay
-pivot_root . overlay
+mkdir -p "$STAGING/merged/.old_root"
+pivot_root "$STAGING/merged" "$STAGING/merged/.old_root"
 
-# Move mounts
-mount --move /overlay/lower /overlay/
-mount --move /overlay/upper /overlay/
-cd /
-
-# Unmount old root
-umount -l /overlay
+# Move essential mounts into the new root. Keep /.old_root mounted because the
+# overlay upper/work directories live under its /run tmpfs.
+mount --move /.old_root/proc /proc 2>/dev/null || mount -t proc proc /proc
+mount --move /.old_root/sys /sys 2>/dev/null || mount -t sysfs sysfs /sys
+mount --move /.old_root/dev /dev 2>/dev/null || mount -t devtmpfs devtmpfs /dev
 
 # Mount any additional data drives
 if [ -b "$DATA_DEVICE" ]; then
