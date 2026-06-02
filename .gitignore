@@ -34,3 +34,7 @@ cloud-hypervisor/with_metadata/*.log
 cloud-hypervisor/with_mounting/*.ext4
 cloud-hypervisor/with_mounting/*.img
 cloud-hypervisor/with_mounting/*.log
+
+firecracker/with_snapshot/work/
+cloud-hypervisor/with_snapshot/work/
+snapshot-results.csv
