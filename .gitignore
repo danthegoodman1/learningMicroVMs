@@ -38,3 +38,8 @@ cloud-hypervisor/with_mounting/*.log
 firecracker/with_snapshot/work/
 cloud-hypervisor/with_snapshot/work/
 snapshot-results.csv
+
+cloud-hypervisor/with_virtiofs/*.log
+cloud-hypervisor/with_virtiofs/*.pid
+cloud-hypervisor/with_virtiofs/shared/*
+!cloud-hypervisor/with_virtiofs/shared/.gitkeep
