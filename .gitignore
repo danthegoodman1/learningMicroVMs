@@ -43,3 +43,9 @@ cloud-hypervisor/with_virtiofs/*.log
 cloud-hypervisor/with_virtiofs/*.pid
 cloud-hypervisor/with_virtiofs/shared/*
 !cloud-hypervisor/with_virtiofs/shared/.gitkeep
+
+cloud-hypervisor/with_custom_virtiofs/*.log
+cloud-hypervisor/with_custom_virtiofs/*.pid
+cloud-hypervisor/with_custom_virtiofs/custom-virtiofsd/target/
+cloud-hypervisor/with_custom_virtiofs/shared/*
+!cloud-hypervisor/with_custom_virtiofs/shared/.gitkeep
