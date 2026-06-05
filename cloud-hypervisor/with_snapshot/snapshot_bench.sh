@@ -17,12 +17,14 @@ RESTORE_RUNS="${RESTORE_RUNS:-3}"
 ROOTFS_SRC="$(ch_find_rootfs)"
 ROOTFS="$WORK_DIR/rootfs.ext4"
 SIGNAL_IMG="$WORK_DIR/signal.img"
-SNAPSHOT_DIR="$WORK_DIR/ch.snapshot"
-CONSOLE_LOG="$WORK_DIR/console.log"
-LOGFILE="$WORK_DIR/cloud-hypervisor.log"
-PIDFILE="$WORK_DIR/cloud-hypervisor.pid"
-RESULTS_CSV="$WORK_DIR/results.csv"
-RESULTS_JSON="$WORK_DIR/results.json"
+SNAPSHOT_DIR="${SNAPSHOT_DIR:-$WORK_DIR/ch.snapshot}"
+CONSOLE_LOG="${CONSOLE_LOG:-$WORK_DIR/console.log}"
+LOGFILE="${LOGFILE:-$WORK_DIR/cloud-hypervisor.log}"
+PIDFILE="${PIDFILE:-$WORK_DIR/cloud-hypervisor.pid}"
+RESULTS_CSV="${RESULTS_CSV:-$WORK_DIR/results.csv}"
+RESULTS_JSON="${RESULTS_JSON:-$WORK_DIR/results.json}"
+RESTORE_MODE="${RESTORE_MODE:-ondemand}"
+EVICT_SNAPSHOT_CACHE="${EVICT_SNAPSHOT_CACHE:-0}"
 METADATA_PID=""
 
 now_ms() {
@@ -77,6 +79,29 @@ write_signal() {
     local value="$1"
     printf '%-512s' "$value" | dd of="$SIGNAL_IMG" bs=512 count=1 conv=notrunc status=none
     sync "$SIGNAL_IMG"
+}
+
+evict_snapshot_cache() {
+    [ "$EVICT_SNAPSHOT_CACHE" = "1" ] || return 0
+
+    sync
+    sudo python3 - "$SNAPSHOT_DIR" <<'PY'
+import os
+import sys
+
+root = sys.argv[1]
+for dirpath, _, filenames in os.walk(root):
+    for filename in filenames:
+        path = os.path.join(dirpath, filename)
+        try:
+            fd = os.open(path, os.O_RDONLY)
+        except OSError:
+            continue
+        try:
+            os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
+        finally:
+            os.close(fd)
+PY
 }
 
 prepare_rootfs() {
@@ -238,6 +263,9 @@ main() {
     echo "Cloud Hypervisor snapshot demo"
     echo "  rootfs: $ROOTFS_SRC"
     echo "  memory: ${BENCH_MEM_MIB}MiB, vcpus: $BENCH_VCPUS"
+    echo "  snapshot: $SNAPSHOT_DIR"
+    echo "  restore mode: $RESTORE_MODE"
+    echo "  evict snapshot cache: $EVICT_SNAPSHOT_CACHE"
 
     local cold_ms pause_ms snapshot_ms restore_ms start run restore_mode json_values
     start="$(now_ms)"
@@ -261,12 +289,16 @@ main() {
 
     echo "hypervisor,run,cold_ready_ms,pause_ms,snapshot_create_ms,restore_ready_ms,restore_mode,metadata_ok" > "$RESULTS_CSV"
     json_values=""
-    restore_mode="ondemand"
+    restore_mode="$RESTORE_MODE"
 
     for run in $(seq 1 "$RESTORE_RUNS"); do
         write_signal "WAIT"
+        evict_snapshot_cache
         start="$(now_ms)"
-        if ! start_restore_vm "ondemand"; then
+        if ! start_restore_vm "$restore_mode"; then
+            if [ "$restore_mode" != "ondemand" ]; then
+                exit 1
+            fi
             restore_mode="copy"
             start_restore_vm "copy"
         fi
