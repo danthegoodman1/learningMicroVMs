@@ -15,6 +15,7 @@ BENCH_MEM_MIB="${BENCH_MEM_MIB:-256}"
 BENCH_VCPUS="${BENCH_VCPUS:-1}"
 RESTORE_RUNS="${RESTORE_RUNS:-3}"
 PRE_SIGNAL_RESTORE="${PRE_SIGNAL_RESTORE:-1}"
+EVICT_SNAPSHOT_CACHE="${EVICT_SNAPSHOT_CACHE:-0}"
 ROOTFS_SRC="$(fc_find_rootfs)"
 KERNEL="$(fc_find_kernel)"
 FIRECRACKER_BIN="$(fc_find_firecracker)"
@@ -118,6 +119,26 @@ write_signal() {
     local value="$1"
     printf '%-512s' "$value" | dd of="$SIGNAL_IMG" bs=512 count=1 conv=notrunc status=none
     sync "$SIGNAL_IMG"
+}
+
+evict_snapshot_cache() {
+    [ "$EVICT_SNAPSHOT_CACHE" = "1" ] || return 0
+
+    sync
+    sudo python3 - "$SNAPSHOT_FILE" "$MEM_FILE" <<'PY'
+import os
+import sys
+
+for path in sys.argv[1:]:
+    try:
+        fd = os.open(path, os.O_RDONLY)
+    except OSError:
+        continue
+    try:
+        os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
+    finally:
+        os.close(fd)
+PY
 }
 
 prepare_rootfs() {
@@ -298,6 +319,7 @@ main() {
     echo "  rootfs: $ROOTFS_SRC"
     echo "  memory: ${BENCH_MEM_MIB}MiB, vcpus: $BENCH_VCPUS"
     echo "  pre-signal restore: $PRE_SIGNAL_RESTORE"
+    echo "  evict snapshot cache: $EVICT_SNAPSHOT_CACHE"
 
     start_firecracker
     configure_source_vm
@@ -333,6 +355,7 @@ main() {
         if [ "$PRE_SIGNAL_RESTORE" = "1" ]; then
             write_signal "GO"
         fi
+        evict_snapshot_cache
         start="$(now_ms)"
         start_firecracker
         put_api snapshot/load "{
