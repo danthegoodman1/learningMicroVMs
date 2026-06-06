@@ -14,6 +14,7 @@ METADATA_IP="${METADATA_IP:-169.254.169.254}"
 BENCH_MEM_MIB="${BENCH_MEM_MIB:-256}"
 BENCH_VCPUS="${BENCH_VCPUS:-1}"
 RESTORE_RUNS="${RESTORE_RUNS:-3}"
+PRE_SIGNAL_RESTORE="${PRE_SIGNAL_RESTORE:-1}"
 ROOTFS_SRC="$(fc_find_rootfs)"
 KERNEL="$(fc_find_kernel)"
 FIRECRACKER_BIN="$(fc_find_firecracker)"
@@ -296,6 +297,7 @@ main() {
     echo "Firecracker snapshot demo"
     echo "  rootfs: $ROOTFS_SRC"
     echo "  memory: ${BENCH_MEM_MIB}MiB, vcpus: $BENCH_VCPUS"
+    echo "  pre-signal restore: $PRE_SIGNAL_RESTORE"
 
     start_firecracker
     configure_source_vm
@@ -328,6 +330,9 @@ main() {
     json_values=""
     for run in $(seq 1 "$RESTORE_RUNS"); do
         write_signal "WAIT"
+        if [ "$PRE_SIGNAL_RESTORE" = "1" ]; then
+            write_signal "GO"
+        fi
         start="$(now_ms)"
         start_firecracker
         put_api snapshot/load "{
@@ -335,7 +340,9 @@ main() {
             \"mem_file_path\": \"$MEM_FILE\",
             \"resume_vm\": true
         }"
-        write_signal "GO"
+        if [ "$PRE_SIGNAL_RESTORE" != "1" ]; then
+            write_signal "GO"
+        fi
         restore_ms="$(wait_for_marker SNAP_BENCH_GO 30 "$start")"
         if ! grep -q 'SNAP_BENCH_GO metadata=ok' "$CONSOLE_LOG"; then
             echo "Metadata check failed after restore" >&2

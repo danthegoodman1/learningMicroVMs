@@ -14,6 +14,13 @@ METADATA_IP="${METADATA_IP:-169.254.169.254}"
 BENCH_MEM_MIB="${BENCH_MEM_MIB:-256}"
 BENCH_VCPUS="${BENCH_VCPUS:-1}"
 RESTORE_RUNS="${RESTORE_RUNS:-3}"
+PRE_SIGNAL_RESTORE="${PRE_SIGNAL_RESTORE:-1}"
+CH_NET_QUEUES="${CH_NET_QUEUES:-2}"
+CH_NET_QUEUE_SIZE="${CH_NET_QUEUE_SIZE:-256}"
+CH_NET_OFFLOADS="${CH_NET_OFFLOADS:-on}"
+CH_THP="${CH_THP:-on}"
+CH_SECCOMP="${CH_SECCOMP:-true}"
+CH_RESTORE_PATH="${CH_RESTORE_PATH:-cli}"
 ROOTFS_SRC="$(ch_find_rootfs)"
 ROOTFS="$WORK_DIR/rootfs.ext4"
 SIGNAL_IMG="$WORK_DIR/signal.img"
@@ -201,6 +208,17 @@ PY
     sleep 0.2
 }
 
+wait_for_ch_socket() {
+    for _ in $(seq 1 100); do
+        if sudo test -S "$API_SOCKET"; then
+            return 0
+        fi
+        sleep 0.01
+    done
+    echo "Timed out waiting for $API_SOCKET" >&2
+    return 1
+}
+
 start_ch_process() {
     local mode="${1:-}"
     local bin kernel
@@ -211,22 +229,33 @@ start_ch_process() {
     : > "$LOGFILE"
 
     local args
-    args=(
-        --kernel "$kernel"
-        --cmdline "$(ch_kernel_boot_args rw "init=/snapshot-init.sh")"
-        --disk "path=${ROOTFS},readonly=on"
-        --disk "path=${SIGNAL_IMG},readonly=off"
-        --cpus "boot=${BENCH_VCPUS}"
-        --memory "size=${BENCH_MEM_MIB}M"
-        --net "tap=${TAP_DEV},mac=06:00:AC:10:00:02"
-        --api-socket "path=$API_SOCKET"
-        --serial "file=$CONSOLE_LOG"
-        --console off
-        --log-file "$LOGFILE"
-    )
-
     if [ -n "$mode" ]; then
-        args+=(--restore "source_url=file://${SNAPSHOT_DIR},memory_restore_mode=${mode},resume=true")
+        args=(
+            --api-socket "path=$API_SOCKET"
+            --log-file "$LOGFILE"
+            --seccomp "$CH_SECCOMP"
+        )
+        if [ "$CH_RESTORE_PATH" != "api" ]; then
+            args+=(--restore "source_url=file://${SNAPSHOT_DIR},memory_restore_mode=${mode},resume=true")
+        fi
+    else
+        local net_args offload_args
+        net_args="tap=${TAP_DEV},mac=06:00:AC:10:00:02,num_queues=${CH_NET_QUEUES},queue_size=${CH_NET_QUEUE_SIZE}"
+        offload_args="offload_tso=${CH_NET_OFFLOADS},offload_ufo=${CH_NET_OFFLOADS},offload_csum=${CH_NET_OFFLOADS}"
+        args=(
+            --kernel "$kernel"
+            --cmdline "$(ch_kernel_boot_args rw "init=/snapshot-init.sh")"
+            --disk "path=${ROOTFS},readonly=on,image_type=raw"
+            --disk "path=${SIGNAL_IMG},readonly=off,image_type=raw"
+            --cpus "boot=${BENCH_VCPUS}"
+            --memory "size=${BENCH_MEM_MIB}M,thp=${CH_THP}"
+            --net "${net_args},${offload_args}"
+            --api-socket "path=$API_SOCKET"
+            --serial "file=$CONSOLE_LOG"
+            --console off
+            --log-file "$LOGFILE"
+            --seccomp "$CH_SECCOMP"
+        )
     fi
 
     sudo "$bin" "${args[@]}" &
@@ -234,7 +263,6 @@ start_ch_process() {
     sudo_pid="$!"
     printf '%s\n' "$sudo_pid" > "${PIDFILE}.sudo"
 
-    sleep 0.1
     real_pid="$(pgrep -P "$sudo_pid" -f "$(basename "$bin")" | head -n 1 || true)"
     printf '%s\n' "${real_pid:-$sudo_pid}" > "$PIDFILE"
 
@@ -242,6 +270,12 @@ start_ch_process() {
         echo "Cloud Hypervisor exited early" >&2
         tail -n 80 "$LOGFILE" >&2 || true
         return 1
+    fi
+
+    if [ -n "$mode" ] && [ "$CH_RESTORE_PATH" = "api" ]; then
+        wait_for_ch_socket
+        sudo "$(ch_find_remote)" --api-socket "$API_SOCKET" restore \
+            "source_url=file://${SNAPSHOT_DIR},memory_restore_mode=${mode},resume=true" >/dev/null
     fi
 }
 
@@ -266,6 +300,10 @@ main() {
     echo "  snapshot: $SNAPSHOT_DIR"
     echo "  restore mode: $RESTORE_MODE"
     echo "  evict snapshot cache: $EVICT_SNAPSHOT_CACHE"
+    echo "  pre-signal restore: $PRE_SIGNAL_RESTORE"
+    echo "  net queues: $CH_NET_QUEUES, queue size: $CH_NET_QUEUE_SIZE, offloads: $CH_NET_OFFLOADS"
+    echo "  thp: $CH_THP, seccomp: $CH_SECCOMP"
+    echo "  restore path: $CH_RESTORE_PATH"
 
     local cold_ms pause_ms snapshot_ms restore_ms start run restore_mode json_values
     start="$(now_ms)"
@@ -294,6 +332,9 @@ main() {
     for run in $(seq 1 "$RESTORE_RUNS"); do
         write_signal "WAIT"
         evict_snapshot_cache
+        if [ "$PRE_SIGNAL_RESTORE" = "1" ]; then
+            write_signal "GO"
+        fi
         start="$(now_ms)"
         if ! start_restore_vm "$restore_mode"; then
             if [ "$restore_mode" != "ondemand" ]; then
@@ -302,16 +343,23 @@ main() {
             restore_mode="copy"
             start_restore_vm "copy"
         fi
-        write_signal "GO"
+        if [ "$PRE_SIGNAL_RESTORE" != "1" ]; then
+            write_signal "GO"
+        fi
         if ! restore_ms="$(wait_for_marker SNAP_BENCH_GO 30 "$start")"; then
             if [ "$restore_mode" = "ondemand" ]; then
                 echo "Ondemand restore did not reach the marker; retrying copy mode..."
                 ch_stop_existing_vm
                 restore_mode="copy"
                 write_signal "WAIT"
+                if [ "$PRE_SIGNAL_RESTORE" = "1" ]; then
+                    write_signal "GO"
+                fi
                 start="$(now_ms)"
                 start_restore_vm "copy"
-                write_signal "GO"
+                if [ "$PRE_SIGNAL_RESTORE" != "1" ]; then
+                    write_signal "GO"
+                fi
                 restore_ms="$(wait_for_marker SNAP_BENCH_GO 30 "$start")"
             else
                 exit 1
