@@ -104,6 +104,15 @@ fc_api_put() {
     echo
 }
 
+fc_prepare_logfile() {
+    local path="$1"
+    local dir
+
+    dir="$(dirname -- "$path")"
+    sudo mkdir -p "$dir"
+    sudo install -m 0644 /dev/null "$path"
+}
+
 fc_ssh() {
     local ip="$1"
     local key="$2"

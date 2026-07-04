@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ARCH="$(uname -m)"
-FC_VERSION="${FC_VERSION:-v1.9.0}"
+FC_VERSION="${FC_VERSION:-v1.16.1}"
 CI_VERSION="${CI_VERSION:-v1.9}"
 RELEASE_URL="https://github.com/firecracker-microvm/firecracker/releases"
 
@@ -29,8 +29,14 @@ wget -N "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/${CI_VERSION}/${A
 # Set user read permission on the ssh key
 chmod 400 ./ubuntu-22.04.id_rsa
 
-# Download and unpack the Firecracker binary if it is not already present
-if [ ! -x ./firecracker ]; then
+# Download and unpack the Firecracker binary if it is missing or not the
+# requested version.
+CURRENT_FC_VERSION=""
+if [ -x ./firecracker ]; then
+    CURRENT_FC_VERSION="$(./firecracker --version 2>/dev/null | awk 'NR == 1 { print $2 }')"
+fi
+
+if [ "$CURRENT_FC_VERSION" != "$FC_VERSION" ]; then
     wget -N "${RELEASE_URL}/download/${FC_VERSION}/firecracker-${FC_VERSION}-${ARCH}.tgz"
     tar -xzf "firecracker-${FC_VERSION}-${ARCH}.tgz"
     cp "release-${FC_VERSION}-${ARCH}/firecracker-${FC_VERSION}-${ARCH}" ./firecracker

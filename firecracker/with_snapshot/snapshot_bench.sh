@@ -259,7 +259,7 @@ PY
 start_firecracker() {
     sudo rm -f "$API_SOCKET"
     : > "$CONSOLE_LOG"
-    : > "$VMM_LOG"
+    fc_prepare_logfile "$VMM_LOG"
     sudo "$FIRECRACKER_BIN" --api-sock "$API_SOCKET" >"$CONSOLE_LOG" 2>&1 &
     FC_PID="$!"
     wait_for_socket

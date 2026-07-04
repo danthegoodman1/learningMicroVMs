@@ -53,7 +53,7 @@ sudo iptables -I FORWARD 1 -i "$TAP_DEV" -o "$HOST_IFACE" -j ACCEPT
 API_SOCKET="${API_SOCKET:-/tmp/firecracker.socket}"
 LOGFILE="${LOGFILE:-$SCRIPT_DIR/firecracker.log}"
 
-touch $LOGFILE
+fc_prepare_logfile "$LOGFILE"
 
 fc_api_put "logger" "{
         \"log_path\": \"${LOGFILE}\",

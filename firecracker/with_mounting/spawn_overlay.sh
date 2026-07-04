@@ -36,8 +36,9 @@ sudo iptables -I FORWARD 1 -i tap0 -o "$HOST_IFACE" -j ACCEPT
 API_SOCKET="${API_SOCKET:-/tmp/firecracker.socket}"
 LOGFILE="${LOGFILE:-$SCRIPT_DIR/firecracker.log}"
 
-# Create log file
-touch $LOGFILE
+# Create a root-owned log file. Firecracker v1.16 runs with reduced
+# capabilities, so the API logger cannot open a user-owned 0600 file.
+fc_prepare_logfile "$LOGFILE"
 
 # Set log file
 fc_api_put "logger" "{

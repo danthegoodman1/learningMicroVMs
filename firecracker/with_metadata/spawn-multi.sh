@@ -88,7 +88,7 @@ sudo iptables -I FORWARD 1 -i "$TAP_DEV" -o "$HOST_IFACE" -j ACCEPT
 
 # --- Firecracker API setup ---
 LOGFILE="${LOGFILE:-$SCRIPT_DIR/firecracker-${VM_NUM}.log}"
-touch "$LOGFILE"
+fc_prepare_logfile "$LOGFILE"
 
 fc_api_put "logger" "{
         \"log_path\": \"${LOGFILE}\",
