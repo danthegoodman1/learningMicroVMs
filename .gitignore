@@ -1,6 +1,9 @@
 checkpointing/rootfs
 checkpointing/pid.txt
 checkpointing/ckpt
+runsc-network/rootfs
+runsc-network/pid.txt
+runsc-network/ckpt
 
 deno-criu/images
 runc-network/rootfs
