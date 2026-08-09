@@ -30,7 +30,8 @@ MIN_FINAL_SWAP_BYTES="${OVC_MIN_FINAL_SWAP_BYTES:-$((8 * GIB))}"
 
 FC_BIN="${OVC_FIRECRACKER_BIN:-$REPO_ROOT/firecracker/firecracker}"
 CH_BIN="${OVC_CLOUD_HYPERVISOR_BIN:-$REPO_ROOT/cloud-hypervisor/cloud-hypervisor}"
-VM_IDS=(fc0 fc1 ch0 ch1)
+QEMU_BIN="${OVC_QEMU_BIN:-$(command -v qemu-system-x86_64 || true)}"
+VM_IDS=(fc0 fc1 ch0 ch1 qm0 qm1)
 
 usage() {
     cat <<'USAGE'
@@ -40,7 +41,7 @@ Commands:
   install-deps        Install host packages needed by the demo.
   preflight           Check host, assets, cgroup, and tool availability.
   prepare             Prepare encrypted swap and the shared cgroup pool.
-  start               Prepare and boot 2 Firecracker + 2 Cloud Hypervisor VMs.
+  start               Prepare and boot 2 VMs each under Firecracker, Cloud Hypervisor, and QEMU.
   prove               Run staged memory pressure proof against already booted VMs.
   watch               Print a live host-side memory table.
   snapshot            Print one host-side memory table.
@@ -125,6 +126,7 @@ vm_type() {
     case "$1" in
         fc*) printf 'fc' ;;
         ch*) printf 'ch' ;;
+        qm*) printf 'qm' ;;
         *) die "unknown VM id: $1" ;;
     esac
 }
@@ -135,6 +137,8 @@ vm_index() {
         fc1) printf '1' ;;
         ch0) printf '2' ;;
         ch1) printf '3' ;;
+        qm0) printf '4' ;;
+        qm1) printf '5' ;;
         *) die "unknown VM id: $1" ;;
     esac
 }
@@ -145,6 +149,8 @@ vm_tap() {
         fc1) printf 'ovfc1' ;;
         ch0) printf 'ovch0' ;;
         ch1) printf 'ovch1' ;;
+        qm0) printf 'ovqm0' ;;
+        qm1) printf 'ovqm1' ;;
         *) die "unknown VM id: $1" ;;
     esac
 }
@@ -197,6 +203,7 @@ vm_source_rootfs() {
     case "$(vm_type "$1")" in
         fc) printf '%s/firecracker/ubuntu-22.04.ext4\n' "$REPO_ROOT" ;;
         ch) printf '%s/cloud-hypervisor/ubuntu-22.04.ext4\n' "$REPO_ROOT" ;;
+        qm) printf '%s/firecracker/ubuntu-22.04.ext4\n' "$REPO_ROOT" ;;
     esac
 }
 
@@ -215,6 +222,12 @@ vm_kernel() {
                 *) die "unsupported architecture: $(uname -m)" ;;
             esac
             ;;
+        qm)
+            local kernel
+            kernel="$(find "$REPO_ROOT/firecracker" -maxdepth 1 -type f -name 'vmlinux-5.10.*' ! -name '*.config' | sort -V | tail -n 1)"
+            [ -n "$kernel" ] || die "no QEMU guest kernel found in $REPO_ROOT/firecracker"
+            printf '%s\n' "$kernel"
+            ;;
     esac
 }
 
@@ -222,6 +235,7 @@ vm_ssh_key() {
     case "$(vm_type "$1")" in
         fc) printf '%s/firecracker/ubuntu-22.04.id_rsa\n' "$REPO_ROOT" ;;
         ch) printf '%s/cloud-hypervisor/ubuntu-22.04.id_rsa\n' "$REPO_ROOT" ;;
+        qm) printf '%s/firecracker/ubuntu-22.04.id_rsa\n' "$REPO_ROOT" ;;
     esac
 }
 
@@ -255,6 +269,7 @@ install_deps() {
         jq \
         openssh-client \
         procps \
+        qemu-system-x86 \
         util-linux
 }
 
@@ -283,6 +298,7 @@ preflight() {
     require_repo_asset "$REPO_ROOT/cloud-hypervisor/ubuntu-22.04.id_rsa"
     require_repo_asset "$FC_BIN"
     require_repo_asset "$CH_BIN"
+    [ -n "$QEMU_BIN" ] && [ -x "$QEMU_BIN" ] || die "qemu-system-x86_64 is missing; install qemu-system-x86"
 
     for vm in "${VM_IDS[@]}"; do
         require_repo_asset "$(vm_kernel "$vm")"
@@ -716,6 +732,59 @@ start_cloud_hypervisor() {
     fi
 }
 
+start_qemu() {
+    local vm socket log_file console_log sudo_pid pid cg kernel rootfs boot_args tap mac
+
+    vm="$1"
+    socket="$(vm_socket "$vm")"
+    log_file="$(vm_log "$vm")"
+    console_log="$(vm_console_log "$vm")"
+    cg="$(vm_cgroup "$vm")"
+    kernel="$(vm_kernel "$vm")"
+    rootfs="$(vm_rootfs "$vm")"
+    boot_args="$(vm_boot_args "$vm" 'console=ttyS0 pci=off')"
+    tap="$(vm_tap "$vm")"
+    mac="$(vm_mac "$vm")"
+
+    setup_tap "$vm"
+    prepare_rootfs_copy "$vm"
+    rm -f "$socket"
+    : > "$log_file"
+    : > "$console_log"
+
+    log "Starting $vm (QEMU microvm, ${GUEST_MEM_MIB}MiB)"
+    run_root bash -c 'echo $$ > "$1"; shift; exec "$@"' \
+        overcommit-qemu "$cg/cgroup.procs" \
+        "$QEMU_BIN" \
+        -machine microvm,accel=kvm,pic=off,pit=off,rtc=off \
+        -cpu host \
+        -smp 1 \
+        -m "${GUEST_MEM_MIB}M" \
+        -nodefaults \
+        -no-user-config \
+        -nographic \
+        -kernel "$kernel" \
+        -append "$boot_args" \
+        -drive "file=${rootfs},format=raw,if=none,id=rootfs,cache=none" \
+        -device virtio-blk-device,drive=rootfs \
+        -netdev "tap,id=net0,ifname=${tap},script=no,downscript=no" \
+        -device "virtio-net-device,netdev=net0,mac=${mac}" \
+        -serial "file:${console_log}" \
+        -qmp "unix:${socket},server=on,wait=off" \
+        -D "$log_file" &
+    sudo_pid="$!"
+    printf '%s\n' "$sudo_pid" > "$(vm_sudo_pidfile "$vm")"
+
+    wait_for_socket "$socket" || die "$vm did not create QMP socket"
+    pid="$(find_vm_pid_from_cgroup "$vm" || true)"
+    [ -n "$pid" ] || {
+        tail -n 80 "$console_log" >&2 || true
+        tail -n 80 "$log_file" >&2 || true
+        die "could not find $vm QEMU PID"
+    }
+    printf '%s\n' "$pid" > "$(vm_pidfile "$vm")"
+}
+
 ssh_run() {
     local vm="$1"
     shift
@@ -767,6 +836,7 @@ start_vms() {
         case "$(vm_type "$vm")" in
             fc) start_firecracker "$vm" ;;
             ch) start_cloud_hypervisor "$vm" ;;
+            qm) start_qemu "$vm" ;;
         esac
     done
 
@@ -1008,7 +1078,7 @@ sum_swap_for() {
 assert_all_vms_ready() {
     local vm guest_mem min_mem
 
-    min_mem=$((5 * GIB))
+    min_mem=$(( (GUEST_MEM_MIB - 256) * MIB ))
     for vm in "${VM_IDS[@]}"; do
         pid_alive "$(vm_pid "$vm")" || die "$vm is not running"
         wait_for_ssh "$vm" || die "$vm is not SSH-responsive"
@@ -1058,13 +1128,14 @@ prove() {
     assert_only_encrypted_swap_active
     assert_all_vms_ready
 
-    log "Configured visible guest RAM: 4 * ${GUEST_MEM_MIB}MiB = $(human_bytes "$((4 * GUEST_MEM_MIB * MIB))")"
+    log "Configured visible guest RAM: ${#VM_IDS[@]} * ${GUEST_MEM_MIB}MiB = $(human_bytes "$(( ${#VM_IDS[@]} * GUEST_MEM_MIB * MIB ))")"
     log "Resident pool hard cap: $(human_bytes "$POOL_MAX_BYTES")"
     log "Guest workload per VM: ${TOUCH_MIB}MiB"
 
     prove_phase "Cloud Hypervisor only" "$MIN_PHASE_SWAP_BYTES" ch0 ch1
     prove_phase "Firecracker only" "$MIN_PHASE_SWAP_BYTES" fc0 fc1
-    prove_phase "All four VMs" "$MIN_FINAL_SWAP_BYTES" "${VM_IDS[@]}"
+    prove_phase "QEMU only" "$MIN_PHASE_SWAP_BYTES" qm0 qm1
+    prove_phase "All six VMs" "$MIN_FINAL_SWAP_BYTES" "${VM_IDS[@]}"
 
     parent_current="$(cgroup_value "$CGROUP_PARENT" memory.current)"
     parent_swap="$(cgroup_value "$CGROUP_PARENT" memory.swap.current)"
@@ -1080,7 +1151,7 @@ prove() {
     log "PROOF PASSED"
     log "  parent memory.current=$(human_bytes "$parent_current") <= memory.max=$(human_bytes "$POOL_MAX_BYTES")"
     log "  parent memory.swap.current=$(human_bytes "$parent_swap")"
-    log "  FC and CH both demonstrated cgroup swap in their staged phases"
+    log "  Firecracker, Cloud Hypervisor, and QEMU demonstrated cgroup swap in staged phases"
 }
 
 stop_vms_only() {

@@ -1,9 +1,10 @@
-# Firecracker + Cloud Hypervisor Host-Swap Overcommit Demo
+# Firecracker + Cloud Hypervisor + QEMU Host-Swap Overcommit Demo
 
-This demo boots four VMs into one shared host cgroup pool:
+This demo boots six VMs into one shared host cgroup pool:
 
 - `fc0`, `fc1`: Firecracker
 - `ch0`, `ch1`: Cloud Hypervisor
+- `qm0`, `qm1`: QEMU `microvm`
 - each VM: 6 GiB visible guest RAM
 - parent pool: `memory.high=8GiB`, `memory.max=9GiB`
 - host swap: encrypted dm-crypt swap, capped by cgroup at 24 GiB
@@ -41,11 +42,12 @@ Runtime state, logs, and copied root filesystems live under:
 
 The `prove` step checks that:
 
-- all four guests report roughly 6 GiB of RAM
+- all six guests report roughly 6 GiB of RAM
 - the parent cgroup remains under the 9 GiB hard resident cap
 - parent `memory.swap.current` grows substantially
 - Cloud Hypervisor VMs produce cgroup swap in their staged phase
 - Firecracker VMs produce cgroup swap in their staged phase
+- QEMU VMs produce cgroup swap in their staged phase
 - all VMs remain SSH-responsive
 
 ## Hard Truths

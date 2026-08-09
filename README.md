@@ -1,5 +1,18 @@
 # learningMicroVMs
 
+Runnable VMM demos are grouped under:
+
+- [`firecracker/`](firecracker/) for Firecracker.
+- [`cloud-hypervisor/`](cloud-hypervisor/) for Cloud Hypervisor.
+- [`qemu/`](qemu/) for QEMU counterparts to the boot, metadata, overlay,
+  snapshot, virtio-fs, and custom virtio-fs demos.
+- [`memory-hotplug/`](memory-hotplug/) for matched virtio-mem demos across all
+  three VMMs.
+- [`overcommit-demo/`](overcommit-demo/) for the shared host-swap/cgroup proof
+  across all three VMMs.
+
+`snapshot-compare.sh` runs the comparable full snapshot benchmark for all three.
+
 Use https://linux.die.net/man/8/resize2fs to shrink the filesystem to what it can really be reduced down to
 
 ## Creating the image bundle

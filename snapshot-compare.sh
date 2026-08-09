@@ -20,9 +20,13 @@ ROOTFS="$ROOTFS" RESTORE_RUNS="$RESTORE_RUNS" BENCH_MEM_MIB="$BENCH_MEM_MIB" BEN
 ROOTFS="$ROOTFS" RESTORE_RUNS="$RESTORE_RUNS" BENCH_MEM_MIB="$BENCH_MEM_MIB" BENCH_VCPUS="$BENCH_VCPUS" \
     "$ROOT_DIR/cloud-hypervisor/with_snapshot/snapshot_bench.sh"
 
+ROOTFS="$ROOTFS" RESTORE_RUNS="$RESTORE_RUNS" BENCH_MEM_MIB="$BENCH_MEM_MIB" BENCH_VCPUS="$BENCH_VCPUS" \
+    "$ROOT_DIR/qemu/with_snapshot/snapshot_bench.sh"
+
 head -n 1 "$ROOT_DIR/firecracker/with_snapshot/work/results.csv" > "$RESULTS"
 tail -n +2 "$ROOT_DIR/firecracker/with_snapshot/work/results.csv" >> "$RESULTS"
 tail -n +2 "$ROOT_DIR/cloud-hypervisor/with_snapshot/work/results.csv" >> "$RESULTS"
+tail -n +2 "$ROOT_DIR/qemu/with_snapshot/work/results.csv" >> "$RESULTS"
 
 echo ""
 echo "Combined results:"
