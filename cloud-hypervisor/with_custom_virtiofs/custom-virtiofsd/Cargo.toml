@@ -9,8 +9,7 @@ clap = { version = "4", features = ["derive"] }
 env_logger = "0.8.4"
 libc = "0.2"
 log = "0.4"
-vhost = "=0.13.0"
-vhost-user-backend = "=0.17.0"
-virtiofsd = { version = "1.13", default-features = false }
+vhost = "0.14.0"
+vhost-user-backend = "0.20.0"
+virtiofsd = { path = "vendor/virtiofsd-1.13.2-ubuntu", default-features = false }
 vm-memory = { version = "0.16.0", features = ["backend-mmap", "backend-atomic"] }
-vmm-sys-util = "=0.12.1"

@@ -34,9 +34,6 @@ struct Opt {
     #[arg(long)]
     shared_dir: String,
 
-    #[arg(long, default_value = "hostshare")]
-    tag: String,
-
     #[arg(long, default_value_t = 0)]
     thread_pool_size: usize,
 }
@@ -46,17 +43,8 @@ struct LoggingPassthroughFs {
 }
 
 impl LoggingPassthroughFs {
-    fn new(shared_dir: String) -> io::Result<Self> {
-        let fs = PassthroughFs::new(Config {
-            root_dir: shared_dir,
-            cache_policy: CachePolicy::Never,
-            entry_timeout: Duration::from_secs(0),
-            attr_timeout: Duration::from_secs(0),
-            writeback: false,
-            xattr: false,
-            readdirplus: false,
-            ..Default::default()
-        })?;
+    fn new(shared_dir: &Path) -> io::Result<Self> {
+        let fs = PassthroughFs::new(passthrough_config(shared_dir)?)?;
 
         Ok(Self { inner: fs })
     }
@@ -436,33 +424,94 @@ impl FileSystem for LoggingPassthroughFs {
 
 impl SerializableFileSystem for LoggingPassthroughFs {
     fn prepare_serialization(&self, cancel: Arc<AtomicBool>) {
+        info!("customfs prepare_serialization");
         self.inner.prepare_serialization(cancel)
     }
 
     fn serialize(&self, state_pipe: File) -> io::Result<()> {
-        self.inner.serialize(state_pipe)
+        info!("customfs serialize");
+        let result = self.inner.serialize(state_pipe);
+        if result.is_ok() {
+            info!("customfs serialize complete");
+        }
+        result
     }
 
     fn deserialize_and_apply(&self, state_pipe: File) -> io::Result<()> {
-        self.inner.deserialize_and_apply(state_pipe)
+        info!("customfs deserialize_and_apply");
+        let result = self.inner.deserialize_and_apply(state_pipe);
+        if result.is_ok() {
+            info!("customfs deserialize_and_apply complete");
+        }
+        result
     }
 }
 
-fn run(fs: LoggingPassthroughFs, opt: &Opt) -> io::Result<()> {
+fn passthrough_config(shared_dir: &Path) -> io::Result<Config> {
+    let root_dir = std::fs::canonicalize(shared_dir)?;
+    let root_dir = root_dir
+        .to_str()
+        .ok_or_else(|| io::Error::from_raw_os_error(libc::EINVAL))?
+        .to_owned();
+
+    Ok(Config {
+        root_dir,
+        cache_policy: CachePolicy::Never,
+        entry_timeout: Duration::from_secs(0),
+        attr_timeout: Duration::from_secs(0),
+        writeback: false,
+        xattr: false,
+        announce_submounts: true,
+        readdirplus: false,
+        ..Default::default()
+    })
+}
+
+fn drop_supplemental_groups_if_root() -> io::Result<()> {
+    if unsafe { libc::geteuid() } != 0 {
+        return Ok(());
+    }
+
+    let group_count = unsafe { libc::getgroups(0, std::ptr::null_mut()) };
+    if group_count < 0 {
+        return Err(io::Error::last_os_error());
+    }
+
+    if group_count != 0 {
+        let ret = unsafe { libc::setgroups(0, std::ptr::null()) };
+        if ret != 0 {
+            return Err(io::Error::last_os_error());
+        }
+    }
+
+    Ok(())
+}
+
+fn build_backend<F>(
+    fs: F,
+    thread_pool_size: usize,
+) -> io::Result<virtiofsd::vhost_user::VhostUserFsBackend<F>>
+where
+    F: FileSystem + SerializableFileSystem + Send + Sync + 'static,
+{
+    VhostUserFsBackendBuilder::default()
+        .set_thread_pool_size(thread_pool_size)
+        .build(fs)
+        .map_err(|err| io::Error::new(io::ErrorKind::Other, format!("{err}")))
+}
+
+fn run<F>(fs: F, opt: &Opt) -> io::Result<()>
+where
+    F: FileSystem + SerializableFileSystem + Send + Sync + 'static,
+{
     let _ = std::fs::remove_file(&opt.socket_path);
     let listener = Listener::new(&opt.socket_path, true)
         .map_err(|err| io::Error::new(io::ErrorKind::Other, format!("{err}")))?;
 
-    let backend = Arc::new(
-        VhostUserFsBackendBuilder::default()
-            .set_thread_pool_size(opt.thread_pool_size)
-            .set_tag(Some(opt.tag.clone()))
-            .build(fs)
-            .map_err(|err| io::Error::new(io::ErrorKind::Other, format!("{err}")))?,
-    );
+    let backend = Arc::new(build_backend(fs, opt.thread_pool_size)?);
 
     let mut daemon = VhostUserDaemon::new(
-        String::from("custom-virtiofsd-backend"),
+        String::from("virtiofsd-backend"),
         backend,
         GuestMemoryAtomic::new(GuestMemoryMmap::new()),
     )
@@ -487,8 +536,9 @@ fn run(fs: LoggingPassthroughFs, opt: &Opt) -> io::Result<()> {
 fn main() {
     env_logger::init();
     let opt = Opt::parse();
+    let shared_dir = Path::new(&opt.shared_dir);
 
-    if !Path::new(&opt.shared_dir).is_dir() {
+    if !shared_dir.is_dir() {
         error!(
             "--shared-dir must be an existing directory: {}",
             opt.shared_dir
@@ -496,7 +546,12 @@ fn main() {
         process::exit(1);
     }
 
-    let fs = LoggingPassthroughFs::new(opt.shared_dir.clone()).unwrap_or_else(|err| {
+    if let Err(err) = drop_supplemental_groups_if_root() {
+        error!("failed to drop supplemental groups: {err}");
+        process::exit(1);
+    }
+
+    let fs = LoggingPassthroughFs::new(shared_dir).unwrap_or_else(|err| {
         error!("failed to create passthrough filesystem: {err}");
         process::exit(1);
     });
