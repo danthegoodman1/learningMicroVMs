@@ -2,6 +2,7 @@
 # Flattens an OCI image into a read-only disk plus a JSON file with what the
 # supervisor needs to run it: argv (Entrypoint + Cmd), env, and cwd.
 # usage: oci_to_disk.sh <image> <out.erofs|out.ext4> [extra mkfs.erofs options, e.g. -zlz4hc]
+#        EROFS_INLINE=1 keeps mkfs.erofs's default inline tails (see below).
 # The extension picks the filesystem. Writes <out>.json too. The image gets
 # empty /dev, /proc, /sys, /run and /tmp, so the supervisor can mount over them
 # without an overlay.
@@ -33,8 +34,10 @@ case "$OUT" in
     # By default mkfs.erofs packs each file's last partial block in with its
     # metadata. Guests read those tails more slowly than whole blocks: Python
     # started 3-4 ms slower than with -Enoinline_data, for 10% less space.
+    inline=(-Enoinline_data)
+    [ "${EROFS_INLINE:-0}" = 1 ] && inline=()
     sudo docker run --rm -v "$TMP:/src:ro" -v "$(cd "$(dirname "$OUT")" && pwd):/out" fast-start-mkfs \
-        mkfs.erofs --quiet -Enoinline_data "$@" "/out/$(basename "$OUT")" /src
+        mkfs.erofs --quiet "${inline[@]}" "$@" "/out/$(basename "$OUT")" /src
     sudo chown "$(id -u):$(id -g)" "$OUT"
     # Block devices come in 512-byte sectors.
     truncate -s "%512" "$OUT"

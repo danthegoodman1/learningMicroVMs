@@ -12,8 +12,8 @@ full-featured `full` kernel first and the stripped-down `tiny` kernel second:
 | Cloud Hypervisor cold boot | 27.8 / 22.4 ms | 24.0 / 18.8 ms | |
 | Cloud Hypervisor warm start | 15.0 / 13.3 ms | 12.1 / 10.2 ms | 1.6 / 1.7 ms |
 
-`results-2026-10-01-kernels.jsonl` holds these runs; `results-2026-09-30.jsonl`
-holds the step-by-step optimization runs.
+`sudo ./reproduce.sh kernels` reruns this table; "Reproduce" below covers the
+rest of the report.
 
 [`REPORT.md`](REPORT.md) is the full write-up, including how to use these
 pieces to start full-featured Linux VMs from a tenant's disk or OCI image in a
@@ -25,6 +25,11 @@ few milliseconds.
 - `final.json`: the experiment matrix, one entry per optimization step.
 - `kernels.json`: the best configurations on the `tiny`, `full` and `full-mit`
   kernels.
+- `pagecache.json`: cold boots with their files cached and evicted.
+- `profile-full.json`: `full` kernel boots that send their `initcall_debug` log
+  to the host, for `tools/gaps.py`.
+- `reproduce.sh`: reruns one group of measurements behind `REPORT.md`, with the
+  host setup each needs.
 - `fastinit.c`: static PID 1. Configures eth0 by ioctl, sends `ready` to the
   host over UDP, then answers every datagram with `pong`.
 - `uffd_populate.c`: Firecracker userfaultfd handler that copies the whole
@@ -40,41 +45,80 @@ few milliseconds.
 - `supervisor/`: a PID 1 that launches the customer's process after a restore,
   with env vars sent from the host, and makes each clone unique (clock, RNG,
   network). See `supervisor/README.md`.
-- `tools/`: bpftrace scripts and reports used to find where time went.
-  `exits.bt` + `symprof.py` sample guest RIPs at VM exits; `sys.bt` + `sysrep.py`
-  time VMM syscalls and KVM ioctls; `gaps.py` ranks slow steps in a guest
-  `initcall_debug` log.
+- `tools/`: bpftrace scripts and reports used to find where time went; see
+  `tools/README.md`.
 
-## Run it
+## Prerequisites
 
-```bash
-../firecracker/dl_reqs.sh
-../cloud-hypervisor/dl_reqs.sh
-./setup.sh                                  # builds work/: images, init, kernels
+- **Host:** x86_64 Linux with KVM (`/dev/kvm`), root via `sudo`, and internet
+  access to GitHub, S3, cdn.kernel.org and Docker Hub. The results come from an
+  Intel Core Ultra 9 285 (P-cores 0-7, E-cores 8-23) on Linux 7.0 with
+  transparent hugepages set to `madvise`.
+- **Kernel modules:** `kvm`, `tun`, `loop` and `dm_mod`.
+- **Commands:** gcc with static glibc, cpio, curl, wget, xz, python3 (3.8 or
+  later), docker, iproute2 (`ip`), e2fsprogs (`mkfs.ext4`, `e2fsck`,
+  `resize2fs`), util-linux (`losetup`), dmsetup and coreutils `numfmt`.
+  `setup.sh` checks for them. The tracing tools also need bpftrace and `nm`;
+  the `repo-scripts` group also needs iptables and a default route.
+- **CPU pinning:** `CPUS` should list performance cores; on a hybrid Intel CPU
+  they are in `/sys/devices/cpu_core/cpus`, which `reproduce.sh` reads. Unpinned
+  runs here were 15-35% slower.
+- **Scratch space:** about 4 GB in `work/` and up to 4 GB of RAM in
+  `/dev/shm/vmbench` and the THP tmpfs while benchmarks run.
 
-sudo sysctl -w vm.nr_hugepages=1024         # Firecracker "huge": true rows
-sudo mkdir -p /mnt/vmbench-hugetmp          # THP tmpfs for snapshot memory
-sudo mount -t tmpfs -o huge=always,size=4G tmpfs /mnt/vmbench-hugetmp
-
-sudo CPUS=0,1,2,3,4,5,6,7 python3 bench.py final.json 30
-sudo CPUS=0,1,2,3,4,5,6,7 python3 bench.py final.json 30 fc_cold_7_tiny_kernel,ch_warm_5_paused_pool_copy
-```
-
-`CPUS` should list performance cores; on this hybrid CPU unpinned runs are
-15-35% slower. Results append to `work/results.jsonl`.
-
-Afterwards:
+## Reproduce
 
 ```bash
-sudo umount /mnt/vmbench-hugetmp
-sudo sysctl -w vm.nr_hugepages=0
+./setup.sh                        # fetches pinned VMMs and kernels, builds work/
+sudo ./reproduce.sh kernels       # one group; `sudo ./reproduce.sh` lists them all
+sudo ./reproduce.sh all           # everything, several hours
 ```
+
+`setup.sh` fetches Firecracker v1.16.1 with its CI kernels (5.10.225 from the
+v1.9 bucket, 6.1.155 from v1.14), Cloud Hypervisor v53.0 with its
+`ch-release-v6.16.9-20260508` kernel, and the Linux 6.1.155 source. It builds
+`fastinit`, the images, the four trimmed kernels and the supervisor and OCI
+test images. Docker base images are pinned by digest; the packages installed
+on top of them are not.
+
+`reproduce.sh` reserves 1024 hugepages, mounts a `huge=always` tmpfs at
+`/mnt/vmbench-hugetmp`, sets `/sys/kernel/rcu_expedited` for the groups that
+need it, and restores all three on exit, along with `net.ipv4.ip_forward`,
+which the repo's scripts turn on. Most groups write
+`work/repro/<group>.jsonl`, one JSON line per configuration with its median,
+p90 and every run; `sudo ./reproduce.sh` with no group lists the exceptions.
+
+| Group | Runs | Report section |
+| --- | --- | --- |
+| `steps` | `bench.py final.json`, 30 runs | the four step tables |
+| `pagecache` | `bench.py pagecache.json`, 20 runs | cold boots with files evicted |
+| `kernels` | `bench.py kernels.json`, 30 runs | Summary; A full-featured guest kernel |
+| `profile` | `bench.py profile-full.json`, 3 runs, then `tools/gaps.py` | the profiled `full` boot |
+| `repo-scripts` | the repo's `*/with_snapshot/snapshot_bench.sh`, `RESTORE_RUNS=5` | the repo-script baselines |
+| `supervisor`, `supervisor-tiny`, `clones` | `supervisor/bench_supervisor.py` | Launching customer code on restore |
+| `rootfs`, `rootfs-rcu`, `rootfs-pipeline`, `erofs-inline`, `erofs`, `erofs-rcu`, plus `supervisor` | `supervisor/bench_supervisor.py` | Building fast-starting Linux VMs |
+
+`RUNS=2` gives a quick check of any group. The repo-script rows in the step
+tables have 5 runs, so their p90 column shows the slowest run. `bench.py` and
+`bench_supervisor.py` also run on their own; their docstrings give the usage.
+In the `kernels` output, names read `<vmm>_<cold|warm>_<tier>__<kernel>`; the
+table at the top takes its cells from the `initramfs`, `prespawned`, `restore`
+and `paused` tiers.
+
+Some figures in `REPORT.md` come from exploratory runs whose results were not
+kept: the dead ends listed under its caveats, `max_loop=1` on the 5.10 kernel,
+Cloud Hypervisor's `hugepages=on`, the unpinned slowdown, and a repeat of the
+step runs after a fresh `setup.sh`. The boot stalls found in the stock
+kernels (528 ms of i8042 probing on Firecracker's 6.1 kernel, 530 ms when Cloud
+Hypervisor gets the i8042 flags, 89 ms of `loop_init` on 5.10) and the other
+figures read from traces were also exploratory; `tools/README.md` shows how to
+retrace them.
 
 ## What the fastest configurations use
 
 Kernel: `vmlinux-tiny` for the absolute minimum, `vmlinux-full` for a VM that
 behaves like a normal Linux machine. `full` costs 3.6 ms (Firecracker) to
-5.4 ms (Cloud Hypervisor) more on a cold boot and almost nothing on a restore.
+5.3 ms (Cloud Hypervisor) more on a cold boot and almost nothing on a restore.
 
 Firecracker cold boot:
 
@@ -113,7 +157,7 @@ Cloud Hypervisor warm start:
 - The harness boots each configuration once, untimed, so the kernel, images,
   and VMM binary are in page cache. Add `"evict": true` to a cold experiment
   to drop them before each run; that adds 10-14 ms for a new VMM process
-  (mostly paging in the VMM binary) and 3-4 ms for a pre-spawned one.
+  (mostly paging in the VMM binary) and 3-4.5 ms for a pre-spawned one.
 - `min`, `tiny` and `full` turn off in-guest speculative-execution
   mitigations. That suits one tenant per VM; host mitigations are unchanged.
   Turning them back on (`full-mit`) adds about 6 ms to a cold boot on both VMMs

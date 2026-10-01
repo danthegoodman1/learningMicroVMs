@@ -4,7 +4,7 @@
 
 ## Summary
 
-A full-featured Linux guest, with iptables, IPv6, containers, FUSE and BPF, cold-boots to a network-ready state in 20.7 ms on Firecracker and 27.8 ms on Cloud Hypervisor. It restores from a snapshot in 7.7 ms and 15.0 ms. A stripped-down kernel saves 3.6–5.4 ms on cold boots and almost nothing on restores. The repo's scripts measured 360, 90, 295 and 78 ms for the same cases.
+A full-featured Linux guest, with iptables, IPv6, containers, FUSE and BPF, cold-boots to a network-ready state in 20.7 ms on Firecracker and 27.8 ms on Cloud Hypervisor. It restores from a snapshot in 7.7 ms and 15.0 ms. A stripped-down kernel saves 3.6–5.3 ms on cold boots and almost nothing on restores. The repo's scripts measured 360, 90, 295 and 78 ms for the same cases.
 
 Keeping a VMM process, or a restored and paused VM, ready ahead of time cuts the times further. Each cell gives the full-featured `full` kernel first and the stripped-down `tiny` kernel second:
 
@@ -17,14 +17,14 @@ Keeping a VMM process, or a restored and paused VM, ready ahead of time cuts the
 
 All figures are medians of 30 runs from one session on 2026-10-01, with the VMM pinned to P-cores. The clock stops when the host receives the guest's first UDP packet.
 
-For Fly-style VMs that run a tenant's OCI image, restoring a generic base snapshot with the tenant's EROFS image already in place runs a static binary 10.6 ms after the request on Firecracker and 15.9 ms on Cloud Hypervisor, including starting the VMM. From a pool of paused base VMs it takes 3.3–3.4 ms. The section "Building fast-starting Linux VMs" describes how.
+For Fly-style VMs that run a tenant's OCI image, restoring a generic base snapshot with the tenant's EROFS image already in place runs a static binary 10.7 ms after the request on Firecracker and 15.9 ms on Cloud Hypervisor, including starting the VMM. From a pool of paused base VMs it takes 3.4 ms on Firecracker, and 3.3 ms on Cloud Hypervisor with a device-mapper swap and expedited RCU. The section "Building fast-starting Linux VMs" describes how.
 
 ## Setup and measurement
 
-Every figure comes from one harness, `fast-start/bench.py`, run on this machine on 2026-09-30.
+Every figure comes from two harnesses run on this machine on 2026-09-30 and 2026-10-01: `fast-start/bench.py` for boots and restores, and `fast-start/supervisor/bench_supervisor.py` for launching customer code. The repo-script baselines come from the repo's own snapshot scripts, described below.
 
 - **Host:** Intel Core Ultra 9 285 (8 P-cores, 16 E-cores), 125 GiB RAM, Linux 7.0.0-30 with KVM.
-- **VMMs:** Firecracker v1.16.1 and Cloud Hypervisor v53.0, as fetched by the repo's `dl_reqs.sh`.
+- **VMMs:** Firecracker v1.16.1 and Cloud Hypervisor v53.0, pinned by `fast-start/setup.sh`.
 - **Guest:** 1 vCPU, 256 MiB, one virtio-net NIC on a pre-created TAP with a permanent ARP entry.
 - **Root filesystem:** the repo's Ubuntu 22.04 ext4 image mounted read-only, or a 740 KB initramfs.
 - **Init:** `fastinit`, a static C program. It configures eth0 with ioctls, sends "ready" over UDP, then answers pings.
@@ -141,7 +141,7 @@ The memory restore mode decides the rest:
 
 ## A full-featured guest kernel
 
-The speed came from removing a handful of boot stalls, not from removing features. The `full` kernel keeps what a general-purpose VM needs. It costs 3.6 ms more than `tiny` on a Firecracker cold boot, 5.4 ms more on Cloud Hypervisor, and almost nothing on a restore.
+The speed came from removing a handful of boot stalls, not from removing features. The `full` kernel keeps what a general-purpose VM needs. It costs 3.6 ms more than `tiny` on a Firecracker cold boot, 5.3 ms more on Cloud Hypervisor, and almost nothing on a restore.
 
 `full` starts from `min`, which keeps cgroups, namespaces, overlayfs, FUSE, virtio-fs, vsock, io_uring, SysV IPC, VMGenID and virtio-mem. It adds back:
 
@@ -182,7 +182,7 @@ The customer's process starts after the restore, so it seeds its own PRNGs from 
 | restores into an already-running VMM | 8.1 ms | 40.0 ms | 13.5 ms | 60.3 ms |
 | resumes an already-restored, paused VM | 2.2 ms | 25.0 ms | 2.3 ms | 24.9 ms |
 
-Medians of 20 runs on the `full` kernel; on `tiny` each row was 0–4 ms faster. The clock stops at the customer's process's first report: a UDP packet from the C program, or the first HTTP response from a Python `http.server`. Here the customer's files are baked into the snapshot; the next section attaches them after restore.
+Medians of 20 runs on the `full` kernel; on `tiny`, cold boots took 4–8 ms less, restores 0–9 ms less (the most for Python on Cloud Hypervisor), and paused resumes stayed within 0.5 ms. The clock stops at the customer's process's first report: a UDP packet from the C program, or the first HTTP response from a Python `http.server`. Here the customer's files are baked into the snapshot; the next section attaches them after restore.
 
 Launching a static binary costs about 1 ms after a fresh restore and under 0.5 ms from a paused pool. The clock, RNG and network fixes take about 50 µs once memory is resident. Python's own startup takes 21–23 ms even in the best tier, and on-demand page faults stretch it to 30–45 ms. Heavy runtimes gain little from launching on restore. They need one snapshot per env config, or a hook that reads config after restore.
 
@@ -190,13 +190,13 @@ A clone check confirmed the fixes. One snapshot was restored three times, each c
 
 - Every child reported its own env-provided ID and reached the host through its new TAP.
 - The three random values differed on both VMMs.
-- Clocks that were 2.1–2.4 s stale came within 0.4–1.6 ms of the host.
+- Clocks that were 2.1–2.4 s stale came within 0.6–1.8 ms of the host.
 
 In a control run without the clock and seed in `START`, all three clones drew identical random bytes and stayed 2.1–2.3 s behind.
 
 ## Building fast-starting Linux VMs
 
-To start a full Linux VM on a tenant's OCI image in milliseconds, never boot it. Restore a generic base VM that has already booted, with the tenant's image already in place as its disk. On the `full` kernel, a tenant's static binary runs 10.6 ms after the request on Firecracker and 15.9 ms on Cloud Hypervisor, including starting the VMM process. Cold-booting a tenant's disk takes 21.9 ms and 30.8 ms.
+To start a full Linux VM on a tenant's OCI image in milliseconds, never boot it. Restore a generic base VM that has already booted, with the tenant's image already in place as its disk. On the `full` kernel, a tenant's static binary runs 10.7 ms after the request on Firecracker and 15.9 ms on Cloud Hypervisor, including starting the VMM process. Cold-booting a tenant's disk takes 21.9 ms and 30.8 ms.
 
 Prepare one base snapshot per VM shape, and rebuild it only when the kernel or supervisor changes:
 
@@ -218,7 +218,7 @@ OCI images need one conversion per image, not per start. `fast-start/supervisor/
 | EROFS image in place before the restore, overlay | 10.7 ms | 60.5 ms | 15.9 ms | 74.6 ms |
 | EROFS image in place before the restore, read-only root | 10.6 ms | 59.8 ms | 16.6 ms | 76.7 ms |
 
-Medians of 20 runs on the `full` kernel; the clock starts before the VMM process does. The static binary is a `FROM scratch` image. Python is `python:3.12-slim` running an HTTP server, with its bytecode compiled during conversion; the image ships none, and as shipped it took 173 ms instead of 63 ms. From a pool of paused base VMs, the static binary runs in 3.4 ms on Firecracker and 3.3 ms on Cloud Hypervisor.
+Medians of 20 runs on the `full` kernel; the clock starts before the VMM process does. The static binary is a `FROM scratch` image. Python is `python:3.12-slim` running an HTTP server, with its bytecode compiled during conversion; the image ships none, and as shipped it took 173 ms instead of 63 ms. From a pool of paused base VMs, the static binary runs in 3.4 ms on Firecracker, and in 3.3 ms on Cloud Hypervisor with a device-mapper swap and expedited RCU (below).
 
 The design rests on these choices:
 
@@ -226,7 +226,7 @@ The design rests on these choices:
 - **Fix the vCPU count per snapshot.** It is baked into the snapshot, and Firecracker cannot hot-add vCPUs, so keep one base per vCPU count. Grow memory after restore with virtio-mem, which `full` supports (Firecracker 1.16 `/hotplug/memory`; the repo's `memory-hotplug/` demos). This was not measured here.
 - **Give each VM its own network namespace** with the same guest IP and MAC, so restored clones need no guest network changes. The supervisor still drops the cached gateway MAC.
 - **Put the tenant's image in place before restoring.** Pointing the base VM's disk path at the image costs nothing on the host and spares Cloud Hypervisor its PCI hot-add, which took 5–7 ms. Firecracker's own drive swap (`PATCH /drives`) takes 0.15 ms, so there it changes little. Images must share the placeholder's size: pad them sparsely, or keep a base snapshot per size class. Each concurrent VM also needs its own disk path; Firecracker's jailer gives each VM its own chroot, and Cloud Hypervisor would need a mount namespace per VMM.
-- **Ship images as EROFS without inline tails.** On a freshly restored guest, EROFS mounts in 0.6–1.3 ms and ext4 in 2.4–3.2 ms, and EROFS images are 25–30% smaller. With mkfs.erofs's default inline tails, Python started 3–4 ms slower; `-Enoinline_data` fixes that.
+- **Ship images as EROFS without inline tails.** On a freshly restored guest, EROFS mounts in 0.6–1.3 ms and ext4 in 2.4–3.2 ms, and EROFS images are about 25% smaller. With mkfs.erofs's default inline tails, Python started 3–4 ms slower; `-Enoinline_data` fixes that.
 - **Choose the overlay for what it allows.** The tmpfs overlay takes 0.3–0.4 ms to mount, within the run-to-run noise. Without it the root is read-only, and only `/tmp`, `/run`, `/dev` and attached volumes are writable. Persistent data belongs on a second, writable volume.
 - **For a paused pool on Cloud Hypervisor, swap a device-mapper table.** The base VM's disk is a device-mapper device that the host points at the tenant's image through a loop device. That cut the paused start from 7.8 ms with hot-add to 3.3 ms, but only with `/sys/kernel/rcu_expedited` set to 1, a host-wide setting: by default the swap waits 4–5 ms for RCU grace periods. Reads through the loop device also add 4–17 ms to Python's start, so on the restore path the device-mapper swap never beat the path swap.
 - **Get clone safety from `START`:** the clock, an RNG reseed, and a tenant process that starts only after restore. The `full` kernel's VMGenID support also reseeds the kernel on Firecracker restores.
@@ -263,7 +263,7 @@ Keep these limits in mind when applying the results:
 - **Pin the VMM to P-cores.** Unpinned or on E-cores, the same runs took 15–35% longer. The CPU governor stayed at its default (`powersave`, `balance_performance`), so a `performance` governor may help further.
 - **Pools trade memory for latency.** A pre-copied or copy-mode paused VM holds its full 256 MiB.
 
-**Cold boots slow down when their files leave the page cache.** Evicting the kernel, initramfs or rootfs, and VMM binary before each boot gave these medians (20 runs each):
+**Cold boots slow down when their files leave the page cache.** Evicting the kernel, initramfs or rootfs, and VMM binary before each boot gave these medians on the tiny kernel (20 runs each):
 
 | Cold boot | Files cached | Files evicted |
 | --- | --- | --- |
@@ -285,20 +285,21 @@ Worth doing next:
 
 ## How to reproduce
 
-Everything lives in `fast-start/` in the repo; `fast-start/README.md` has the details.
+Everything lives in `fast-start/` in the repo; `fast-start/README.md` lists the prerequisites. `setup.sh` fetches the pinned VMMs and guest kernels and builds everything else. `reproduce.sh` reruns one group of measurements with the host settings it needs, and writes each configuration's median, p90 and every run to `fast-start/work/repro/<group>.jsonl`.
 
 ```bash
 cd fast-start
-./setup.sh            # images, fastinit, uffd_populate, four kernels, supervisor and OCI images
-sudo sysctl -w vm.nr_hugepages=1024
-sudo mkdir -p /mnt/vmbench-hugetmp
-sudo mount -t tmpfs -o huge=always,size=4G tmpfs /mnt/vmbench-hugetmp
-sudo CPUS=0,1,2,3,4,5,6,7 python3 bench.py final.json 30                   # optimization steps
-sudo CPUS=0,1,2,3,4,5,6,7 python3 bench.py kernels.json 30                 # tiny vs full vs full-mit
-sudo CPUS=0,1,2,3,4,5,6,7 python3 supervisor/bench_supervisor.py 20        # supervisor, attach and OCI tiers
-sudo CPUS=0,1,2,3,4,5,6,7 python3 supervisor/bench_supervisor.py clones    # clone safety
+./setup.sh
+sudo ./reproduce.sh kernels    # one group; `all` runs every group, several hours
 ```
 
-Each entry in `final.json` is one bar in the step charts; pass a comma-separated list of names to run a subset. The raw runs behind this report are in `results-2026-09-30.jsonl` (steps), `results-2026-09-30-pagecache.jsonl` (evicted page cache), `results-2026-10-01-kernels.jsonl` (kernels) and `supervisor/results-2026-10-01-*.jsonl` (supervisor, attach and OCI). After a fresh `setup.sh`, a repeat run matched the step medians within about 1 ms. This file is an export of the shared report; the shared version draws the step tables as charts.
+| Report section | `reproduce.sh` groups |
+| --- | --- |
+| Summary; A full-featured guest kernel | `kernels` |
+| The four step tables | `steps`, plus `repo-scripts` for the repo-script rows |
+| Cold boots with files evicted (caveats) | `pagecache` |
+| The profiled `full` boot | `profile` |
+| Launching customer code on restore | `supervisor`, `supervisor-tiny`, `clones` |
+| Building fast-starting Linux VMs | `rootfs`, `rootfs-rcu`, `rootfs-pipeline`, `erofs-inline`, `erofs`, `erofs-rcu`, plus `supervisor` for the cold boots and Python as shipped |
 
-To see where time goes, `fast-start/tools/` has the tracing used here: guest RIP sampling at VM exits (`exits.bt`, `symprof.py`), VMM syscall and KVM ioctl timing (`sys.bt`, `sysrep.py`), and a ranking of slow steps in a guest `initcall_debug` log (`gaps.py`).
+The repo-script rows have 5 runs, so their p90 is the slowest run. Some figures come from exploratory runs whose results were not kept: the dead ends listed under the caveats, `max_loop=1` on the 5.10 kernel, Cloud Hypervisor's `hugepages=on`, the unpinned slowdown, and a repeat of the step runs after a fresh `setup.sh`, which matched within about 1 ms. The stalls found in the stock kernels (528 ms of i8042 probing, 530 ms when Cloud Hypervisor gets the i8042 flags, 89 ms of `loop_init`) and the other figures read from traces were exploratory too; `fast-start/tools/README.md` shows how to retrace them. This file is an export of the shared report; the shared version draws the step tables as charts.

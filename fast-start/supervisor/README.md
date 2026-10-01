@@ -70,9 +70,9 @@ calls them `path`, `hotadd` and `dm`:
   same device it saw at snapshot time. It works on both VMMs and costs nothing
   on the host. Two conditions:
   - Every image has the placeholder's size, so the guest never sees a
-    capacity change. The harness pads images in place with `truncate`, which
-    allocates no blocks; a host with mixed sizes would keep a base snapshot
-    per size class.
+    capacity change. The harness pads a copy of each image with sparse zeros
+    (`../work/slot/`); a host with mixed sizes would keep a base snapshot per
+    size class.
   - Each concurrent VM needs its own path. Firecracker's jailer gives each VM
     its own chroot, so the same path resolves per VM; for Cloud Hypervisor, a
     mount namespace per VMM or a per-restore copy of the snapshot's
@@ -102,9 +102,9 @@ with its own env vars layered on top. The output's extension picks the
 filesystem:
 
 - `.erofs` (the faster choice): built by `mkfs.erofs -Enoinline_data` in the
-  `fast-start-mkfs` Docker image from `oci/mkfs/`. Images are 25–30% smaller
-  than ext4. With mkfs.erofs's default inline tails, Python started 3–4 ms
-  slower.
+  `fast-start-mkfs` Docker image from `oci/mkfs/`. The precompiled Python image
+  takes 141 MiB as EROFS and 185 MiB as ext4. With mkfs.erofs's default inline
+  tails (`EROFS_INLINE=1`), Python started 3–4 ms slower.
 - `.ext4`: built by `mkfs.ext4 -d`, with no loop mount.
 
 The converter adds empty `/dev`, `/proc`, `/sys`, `/run` and `/tmp`, so the
@@ -114,7 +114,8 @@ image runs as root.
 
 `oci/build.sh` builds the three test images used below, in both formats:
 `python:3.12-slim` with the HTTP server, the same image with its bytecode
-precompiled, and a `FROM scratch` image holding only the C probe.
+precompiled, and a `FROM scratch` image holding only the C probe. It also
+builds inline-tail EROFS copies of the last two, for comparison.
 
 ## Files
 
@@ -134,17 +135,11 @@ precompiled, and a `FROM scratch` image holding only the C probe.
 - `oci_to_disk.sh`, `oci/`: OCI image to EROFS or ext4 conversion, the
   `mkfs.erofs` Docker image, and the test images.
 - `dmslot.py`: the device-mapper slot used by the `dm` attach mode.
-- `bench_supervisor.py`: timing matrix (`KERNEL=full` by default;
-  `PIPELINE=1` sends `START` with the vsock `CONNECT`) and clone checks.
-- The runs below:
-  - `results-2026-10-01-full.jsonl` and `results-2026-10-01-tiny.jsonl`: the
-    tiers on each kernel;
-  - `results-2026-10-01-rootfs.jsonl`: the attach-mode and filesystem grid,
-    with expedited RCU and with pipelined `START`. Its EROFS images used
-    mkfs.erofs's default inline tails;
-  - `results-2026-10-01-erofs.jsonl`: the EROFS rows with the converter's
-    current settings;
-  - `clones-2026-10-01.txt`: the clone checks.
+- `bench_supervisor.py`: timing matrix and clone checks. Its `SETS` name the
+  variants each `../reproduce.sh` group runs.
+- `../reproduce.sh` groups `supervisor`, `supervisor-tiny` and `clones` rerun
+  the tiers and clone checks below; `rootfs`, `rootfs-rcu`, `rootfs-pipeline`,
+  `erofs-inline`, `erofs` and `erofs-rcu` rerun the OCI tables.
 
 ## Results
 
@@ -199,6 +194,10 @@ image, restores the base snapshot, and sends `START`. The static binary is the
 | dm swap, EROFS read-only | 16.5 ms | 80.0 ms | 24.8 ms | 88.8 ms |
 | dm swap, EROFS read-only, expedited RCU | 11.0 ms | 70.2 ms | 16.8 ms | 82.3 ms |
 
+The ext4 rows come from the `rootfs` group, the EROFS rows from `erofs`, and
+the expedited-RCU row from `erofs-rcu`. Configurations are named
+`<vmm>_<c|py>_oci_<hotadd|path|dm>_<fs>_<overlay|ro>_restore`.
+
 - **Path swap** removes Cloud Hypervisor's hot-add: the host no longer waits
   for the restore to finish before attaching, and the guest probes no new
   device. On Firecracker the drive swap already cost only 0.15 ms.
@@ -218,8 +217,8 @@ With a paused base VM (static binary, EROFS read-only, T0 at resume):
 | dm swap | 7.6 ms | 8.9 ms |
 | dm swap, expedited RCU | 4.2 ms | 3.3 ms |
 
-A dm swap with expedited RCU replaces Cloud Hypervisor's hot-add in a paused
-pool, at the cost of a host-wide RCU setting and slower reads through the loop
+These are the `_paused` rows of the `erofs` and `erofs-rcu` groups. A dm swap with expedited RCU replaces Cloud Hypervisor's
+hot-add in a paused pool, at the cost of a host-wide RCU setting and slower reads through the loop
 device.
 
 Host round trips beyond the attach itself gave nothing measurable:
@@ -263,7 +262,7 @@ On both VMMs and with both children:
 
 - every child reported its own `INSTANCE_ID`;
 - the three random values differed;
-- clocks that were 2.1–2.4 s stale came within 0.4–1.6 ms of the host;
+- clocks that were 2.1–2.4 s stale came within 0.6–1.8 ms of the host;
 - the child reached the host through the new TAP.
 
 `clones-control` sends `START` without the clock and seed. All three clones

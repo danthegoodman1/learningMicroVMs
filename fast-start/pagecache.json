@@ -1,0 +1,138 @@
+{
+ "fc_cold_7_tiny_kernel": {
+  "vmm": "fc",
+  "kind": "cold",
+  "kernel": "tiny",
+  "initrd": "tiny",
+  "huge": true,
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0"
+ },
+ "fc_cold_7_tiny_kernel_evict": {
+  "vmm": "fc",
+  "kind": "cold",
+  "kernel": "tiny",
+  "initrd": "tiny",
+  "huge": true,
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0",
+  "evict": true
+ },
+ "fc_cold_7b_tiny_kernel_ext4": {
+  "vmm": "fc",
+  "kind": "cold",
+  "kernel": "tiny",
+  "rootfs": "ubuntu",
+  "huge": true,
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0 init=/fastinit"
+ },
+ "fc_cold_7b_tiny_kernel_ext4_evict": {
+  "vmm": "fc",
+  "kind": "cold",
+  "kernel": "tiny",
+  "rootfs": "ubuntu",
+  "huge": true,
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0 init=/fastinit",
+  "evict": true
+ },
+ "fc_cold_8_prespawned": {
+  "vmm": "fc",
+  "kind": "cold",
+  "kernel": "tiny",
+  "initrd": "tiny",
+  "huge": true,
+  "prespawn": true,
+  "no_seccomp": true,
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0"
+ },
+ "fc_cold_8_prespawned_evict": {
+  "vmm": "fc",
+  "kind": "cold",
+  "kernel": "tiny",
+  "initrd": "tiny",
+  "huge": true,
+  "prespawn": true,
+  "no_seccomp": true,
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0",
+  "evict": true
+ },
+ "ch_cold_6_tiny_kernel": {
+  "vmm": "ch",
+  "kind": "cold",
+  "kernel": "tiny",
+  "initrd": "tiny",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0"
+ },
+ "ch_cold_6_tiny_kernel_evict": {
+  "vmm": "ch",
+  "kind": "cold",
+  "kernel": "tiny",
+  "initrd": "tiny",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0",
+  "evict": true
+ },
+ "ch_cold_6b_tiny_kernel_ext4": {
+  "vmm": "ch",
+  "kind": "cold",
+  "kernel": "tiny",
+  "rootfs": "ubuntu",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0 root=/dev/vda ro init=/fastinit"
+ },
+ "ch_cold_6b_tiny_kernel_ext4_evict": {
+  "vmm": "ch",
+  "kind": "cold",
+  "kernel": "tiny",
+  "rootfs": "ubuntu",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0 root=/dev/vda ro init=/fastinit",
+  "evict": true
+ },
+ "ch_cold_7_prespawned": {
+  "vmm": "ch",
+  "kind": "cold",
+  "kernel": "tiny",
+  "initrd": "tiny",
+  "prespawn": true,
+  "seccomp": "false",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0"
+ },
+ "ch_cold_7_prespawned_evict": {
+  "vmm": "ch",
+  "kind": "cold",
+  "kernel": "tiny",
+  "initrd": "tiny",
+  "prespawn": true,
+  "seccomp": "false",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0",
+  "evict": true
+ },
+ "fc_cold_5_initramfs": {
+  "vmm": "fc",
+  "kind": "cold",
+  "kernel": "fc61",
+  "initrd": "tiny",
+  "huge": true,
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0 i8042.noaux i8042.nomux i8042.nopnp i8042.dumbkbd"
+ },
+ "fc_cold_5_initramfs_evict": {
+  "vmm": "fc",
+  "kind": "cold",
+  "kernel": "fc61",
+  "initrd": "tiny",
+  "huge": true,
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0 i8042.noaux i8042.nomux i8042.nopnp i8042.dumbkbd",
+  "evict": true
+ },
+ "ch_cold_4_initramfs": {
+  "vmm": "ch",
+  "kind": "cold",
+  "kernel": "fc61",
+  "initrd": "tiny",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0"
+ },
+ "ch_cold_4_initramfs_evict": {
+  "vmm": "ch",
+  "kind": "cold",
+  "kernel": "fc61",
+  "initrd": "tiny",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0",
+  "evict": true
+ }
+}

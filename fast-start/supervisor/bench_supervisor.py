@@ -2,11 +2,13 @@
 """Time from "start a VM" to the customer's process doing work, using the
 supervisor as PID 1, and check that restored clones are distinct.
 
-Usage (as root, after ../setup.sh and ./build.sh, with vm.nr_hugepages reserved
-and a huge=always tmpfs at /mnt/vmbench-hugetmp; see ../README.md):
-    CPUS=0,1,2,3,4,5,6,7 python3 bench_supervisor.py [runs] [name,name,...]
+Usage (as root, after ../setup.sh, with vm.nr_hugepages reserved and a
+huge=always tmpfs at /mnt/vmbench-hugetmp; ../reproduce.sh does all of this):
+    CPUS=0,1,2,3,4,5,6,7 python3 bench_supervisor.py [runs] [name,name,...|@set]
     CPUS=0,1,2,3,4,5,6,7 python3 bench_supervisor.py clones
     CPUS=0,1,2,3,4,5,6,7 python3 bench_supervisor.py clones-control
+@set runs one of the named sets in SETS, the variants behind each
+../reproduce.sh group. Rows append to RESULTS (default ../work/supervisor-results.jsonl).
 KERNEL picks the guest kernel (default full). PIPELINE=1 sends START in the
 same write as the vsock CONNECT line. Each result row records the host's
 /sys/kernel/rcu_expedited, which sets how long a dm swap takes.
@@ -26,7 +28,8 @@ tenant's disk after T0. "attach" picks how:
   dm      the base VM's disk is a device-mapper slot (dmslot.py) whose table
           is pointed at the tenant image
   path    the base VM's disk is a symlink that is pointed at the tenant image
-          before the VMM opens it (restore only; images padded to SLOT_SIZE)
+          before the VMM opens it (restore only; uses a copy of the image
+          padded to SLOT_SIZE, in ../work/slot/)
 """
 import json
 import os
@@ -50,7 +53,7 @@ RUN = bench.RUN_DIR
 API = f"{RUN}/sv-api.sock"
 VSOCK = f"{RUN}/sv-vsock.sock"          # vsock socket of a booted VM
 VSOCK_RESTORED = f"{RUN}/sv-vsock-r.sock"  # Firecracker: vsock_override on restore
-RESULTS = f"{bench.WORK}/supervisor-results.jsonl"
+RESULTS = os.environ.get("RESULTS", f"{bench.WORK}/supervisor-results.jsonl")
 # Fly-style starts: a generic base snapshot (initramfs + supervisor, no tenant
 # files) gets the tenant's disk after restore. The Ubuntu image doubles as the
 # tenant disk; it holds both test children.
@@ -64,6 +67,7 @@ PLACEHOLDER = f"{bench.WORK}/placeholder.img"
 SLOT_SIZE = 512 << 20
 SLOT_LINK = f"{RUN}/sv-slot.img"
 SLOT_PLACEHOLDER = f"{RUN}/sv-slot-placeholder.img"
+SLOT_IMAGES = f"{bench.WORK}/slot"  # images padded to SLOT_SIZE for "path"
 SLOT = None  # dmslot.Slot, created in main()
 
 CHILDREN = {
@@ -154,17 +158,27 @@ def point_link(target):
     os.replace(tmp, SLOT_LINK)
 
 
+def padded_image(v):
+    """The tenant image padded to SLOT_SIZE with sparse zeros, for "path"."""
+    src = tenant_disk(v)
+    dst = os.path.join(SLOT_IMAGES, os.path.basename(src))
+    if not os.path.exists(dst) or os.path.getmtime(dst) < os.path.getmtime(src):
+        os.makedirs(SLOT_IMAGES, exist_ok=True)
+        subprocess.run(["cp", "--sparse=always", src, dst], check=True)
+        os.truncate(dst, SLOT_SIZE)
+    return dst
+
+
 def prepare_slot(v):
     """Before booting a base VM: an empty slot. Before T0: the tenant image is
-    ready to swap in (a loop device, or padded to the slot size)."""
+    ready to swap in (a loop device, or a padded copy)."""
     if v.get("attach") == "dm":
         SLOT.clear()
         SLOT.add_image(tenant_disk(v))
     elif v.get("attach") == "path":
         with open(SLOT_PLACEHOLDER, "a"):
             os.truncate(SLOT_PLACEHOLDER, SLOT_SIZE)
-        if os.path.getsize(tenant_disk(v)) < SLOT_SIZE:
-            os.truncate(tenant_disk(v), SLOT_SIZE)  # sparse: the image's own blocks are unchanged
+        padded_image(v)
         point_link(SLOT_PLACEHOLDER)
 
 
@@ -173,7 +187,7 @@ def swap_slot(v):
     if v.get("attach") == "dm":
         SLOT.swap(tenant_disk(v))
     elif v.get("attach") == "path":
-        point_link(tenant_disk(v))
+        point_link(padded_image(v))
 
 
 def attach_tenant_disk(v):
@@ -437,6 +451,7 @@ KERNEL = os.environ.get("KERNEL", "full")
 # PIPELINE=1: send START in the same write as the vsock CONNECT line.
 PIPELINE = os.environ.get("PIPELINE") == "1"
 MATRIX = {}
+SETS = {}
 for vmm in ("fc", "ch"):
     for child in ("c", "py"):
         tiers = [("cold", {}), ("restore", {}), ("prespawn", {}), ("paused", {}),
@@ -461,27 +476,53 @@ for vmm in ("fc", "ch"):
                 v["snapdir"] = f"{THP_TMPFS}/sv-snap-fc-{child}" + ("-base" if v.get("tenant") else "")
             MATRIX[f"{vmm}_{child}_{name}"] = v
 
+SETS["supervisor"] = list(MATRIX)
+SETS["supervisor-tiny"] = [f"{vmm}_{child}_{tier}" for vmm in ("fc", "ch") for child in ("c", "py")
+                      for tier in ("cold", "restore", "prespawn", "paused")]
+
 # Restore (or resume) a generic base snapshot and give it an OCI image (the
 # scratch image for the C probe, precompiled Python for py): how the disk
 # arrives, its filesystem, and whether the root gets a tmpfs overlay ("ro"
 # mounts the image directly; only /tmp, /run and /dev are writable).
-# Named <vmm>_<child>_oci_<attach>_<fs>_<root>_<tier>.
+# "erofsinline" is EROFS built with mkfs.erofs's default inline tails
+# (oci-*-inline.erofs). Named <vmm>_<child>_oci_<attach>_<fs>_<root>_<tier>.
 ROOTS = {"overlay": {}, "ro": {"overlay": False}, "noload": {"overlay": False, "rootfs_opts": "noload"}}
 for vmm in ("fc", "ch"):
     for child in ("c", "py"):
         for attach in ("hotadd", "dm", "path"):
-            for fs in ("ext4", "erofs"):
+            for fs in ("ext4", "erofs", "erofsinline"):
                 for root, opts in ROOTS.items():
                     for tier in ("restore", "paused"):
                         if (root == "noload" and fs != "ext4") or (attach == "path" and tier == "paused"):
                             continue
+                        image = "py-pyc" if child == "py" else True
+                        if fs == "erofsinline":
+                            image = ("py-pyc" if child == "py" else "scratch") + "-inline"
                         v = {"vmm": vmm, "child": child, "tier": tier, "kernel": KERNEL, "tenant": True,
-                             "oci": "py-pyc" if child == "py" else True, "attach": attach, "fs": fs, **opts}
+                             "oci": image, "attach": attach, "fs": "erofs" if fs == "erofsinline" else fs, **opts}
                         if vmm == "fc" and tier == "paused":
                             v.update(huge=True, uffd_populate=True)
                         if vmm == "fc" and tier == "restore":
                             v["snapdir"] = f"{THP_TMPFS}/sv-snap-fc-{child}-base"
                         MATRIX[f"{vmm}_{child}_oci_{attach}_{fs}_{root}_{tier}"] = v
+
+
+def _grid(fs_roots, attaches=("hotadd", "dm", "path"), tier="restore", children=("c", "py")):
+    return [f"{vmm}_{child}_oci_{attach}_{fr}_{tier}" for vmm in ("fc", "ch") for child in children
+            for attach in attaches for fr in fs_roots if not (attach == "path" and tier == "paused")]
+
+
+# The variants behind each ../reproduce.sh group of the same name.
+SETS["rootfs"] = (_grid(["ext4_overlay", "ext4_ro", "ext4_noload", "erofsinline_overlay", "erofsinline_ro"])
+                  + _grid(["ext4_overlay", "erofsinline_ro"], ("hotadd", "dm"), "paused", ("c",)))
+SETS["rootfs-rcu"] = [n for n in SETS["rootfs"] if "_ext4_overlay_" in n or "_erofsinline_ro_" in n]
+SETS["rootfs-pipeline"] = (_grid(["erofsinline_ro"], ("hotadd", "path"))
+                           + _grid(["erofsinline_ro"], ("dm",), "paused", ("c",)))
+SETS["erofs-inline"] = _grid(["ext4_ro", "erofsinline_ro", "erofs_ro"], ("path",))
+SETS["erofs"] = (_grid(["erofs_overlay", "erofs_ro"])
+                 + _grid(["erofs_ro"], ("hotadd", "dm"), "paused", ("c",)))
+SETS["erofs-rcu"] = [n for n in SETS["erofs"] if "_dm_erofs_ro_" in n]
+assert all(n in MATRIX for names in SETS.values() for n in names)
 
 
 def bench_matrix(s, runs, only):
@@ -541,7 +582,9 @@ def main():
             check_clones(s, fixups=sys.argv[1] == "clones")
         else:
             runs = int(sys.argv[1]) if len(sys.argv) > 1 else 20
-            only = sys.argv[2].split(",") if len(sys.argv) > 2 else None
+            only = None
+            if len(sys.argv) > 2:
+                only = SETS[sys.argv[2][1:]] if sys.argv[2].startswith("@") else sys.argv[2].split(",")
             bench_matrix(s, runs, only)
     finally:
         bench.kill_stray_vmms()

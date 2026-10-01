@@ -2,6 +2,8 @@
 
 set -euo pipefail
 
+cd "$(dirname -- "${BASH_SOURCE[0]}")"
+
 ARCH="$(uname -m)"
 FC_VERSION="${FC_VERSION:-v1.16.1}"
 CI_VERSION="${CI_VERSION:-v1.9}"

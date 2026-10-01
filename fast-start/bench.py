@@ -29,9 +29,22 @@ Experiment keys:
   snapdir        snapshot directory; "disk" puts it under work/snapshots (default: RUN_DIR tmpfs)
   evict          drop the boot files (kernel, initramfs or rootfs, VMM binary) or, for warm
                  runs, the snapshot files from page cache before each measured run
+  restore_prefault  CH: prefault=on for the restore
+  api_config     FC cold: configure a fresh process over the API instead of --config-file
+  pci            FC: --enable-pci
+  boot_timer     FC: --boot-timer
+  level          FC: --level (log level)
+  serial         CH: raw --serial value (default "off")
+  net_opt        CH: raw --net value
+  ch_extra       CH: extra command-line arguments (list)
   settle         seconds to wait after boot before snapshotting (default 0.5)
+  gap            seconds between measured runs (default 0.05)
+  keep_snapshot  warm: keep the snapshot directory afterwards
   console_log    CH: write the serial console to RUN_DIR/ch-console.log
   dmesg          path; with fi_dmesg=1 on the cmdline the guest sends its kernel log there
+
+Results print to stdout as JSON lines and append, with each variant, to
+work/results.jsonl.
 
 Env: CPUS pins the harness and its VMMs; RUN_DIR (default /dev/shm/vmbench) holds
 sockets, logs, and tmpfs snapshots; FC_BIN and CH_BIN override the VMM binaries.

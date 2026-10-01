@@ -1,16 +1,38 @@
 #!/usr/bin/env bash
-# Builds everything bench.py needs into work/:
+# Fetches the VMMs and guest kernels this research used, then builds everything
+# the harnesses need into work/:
 #   fastinit, initramfs.cpio, ubuntu-fastinit.ext4, uffd_populate,
-#   vmlinux-min, -tiny, -full and -full-mit (6.1 guest kernels, built in Docker).
-# Needs: gcc with static glibc, cpio, sudo, docker. Run ../firecracker/dl_reqs.sh
-# and ../cloud-hypervisor/dl_reqs.sh first.
+#   vmlinux-min, -tiny, -full and -full-mit (6.1 guest kernels, built in Docker),
+#   and the supervisor and OCI test images (supervisor/build.sh, supervisor/oci/build.sh).
+# README.md lists the prerequisites.
 set -euo pipefail
 
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO="$(cd -- "$HERE/.." && pwd)"
 WORK="$HERE/work"
 KVER="${KVER:-6.1.155}"
 BUILD_CPUS="${BUILD_CPUS:-$(nproc)}"
 mkdir -p "$WORK"
+
+missing=()
+for cmd in gcc cpio curl wget xz python3 docker sudo ip mkfs.ext4 e2fsck resize2fs losetup dmsetup numfmt; do
+    command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
+done
+if [ "${#missing[@]}" -gt 0 ]; then
+    echo "Missing commands: ${missing[*]} (see README.md, Prerequisites)" >&2
+    exit 1
+fi
+
+# The versions the results were measured with. Firecracker's dl_reqs.sh pins
+# v1.16.1 itself; its 5.10 kernel is the newest in the frozen CI v1.9 bucket.
+(cd "$REPO/firecracker" && ./dl_reqs.sh)
+(cd "$REPO/cloud-hypervisor" && CH_VERSION=v53.0 CH_KERNEL_TAG=ch-release-v6.16.9-20260508 ./dl_reqs.sh)
+FC61="$REPO/firecracker/vmlinux-6.1.155"
+if [ ! -f "$FC61" ]; then
+    curl -fL --retry 3 -o "$FC61.tmp" \
+        "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/v1.14/$(uname -m)/vmlinux-6.1.155"
+    mv "$FC61.tmp" "$FC61"
+fi
 
 gcc -O2 -static -s -o "$WORK/fastinit" "$HERE/fastinit.c"
 gcc -O2 -o "$WORK/uffd_populate" "$HERE/uffd_populate.c"
@@ -57,6 +79,4 @@ fi
 "$HERE/supervisor/build.sh"
 "$HERE/supervisor/oci/build.sh"
 
-echo "Ready. Example:"
-echo "  sudo sysctl -w vm.nr_hugepages=1024"
-echo "  sudo CPUS=0,1,2,3,4,5,6,7 python3 $HERE/bench.py $HERE/final.json 30"
+echo "Ready. Reproduce a result group with: sudo $HERE/reproduce.sh <group> (see README.md)"

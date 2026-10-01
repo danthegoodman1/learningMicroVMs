@@ -78,7 +78,7 @@ class Slot:
         _dm_ioctl(self._ctl, _DM_TABLE_LOAD, self.name, _DM_READONLY_FLAG, targets)
         # Resuming with a new table loaded suspends the device, swaps the table
         # and resumes it. The suspend waits for RCU grace periods: about 4 ms
-        # by default, under 0.1 ms with /sys/kernel/rcu_expedited set to 1.
+        # by default, 0.1-0.6 ms with /sys/kernel/rcu_expedited set to 1.
         _dm_ioctl(self._ctl, _DM_DEV_SUSPEND, self.name, _DM_SKIP_LOCKFS_FLAG)
         fd = os.open(self.path, os.O_RDONLY | os.O_CLOEXEC)
         try:

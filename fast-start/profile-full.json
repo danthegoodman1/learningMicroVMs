@@ -1,0 +1,19 @@
+{
+ "fc_full_dbg": {
+  "vmm": "fc",
+  "kind": "cold",
+  "kernel": "full",
+  "initrd": "tiny",
+  "huge": true,
+  "dmesg": "/dev/shm/vmbench/fc-full.dmesg",
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0 initcall_debug fi_dmesg=1"
+ },
+ "ch_full_dbg": {
+  "vmm": "ch",
+  "kind": "cold",
+  "kernel": "full",
+  "initrd": "tiny",
+  "dmesg": "/dev/shm/vmbench/ch-full.dmesg",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0 initcall_debug fi_dmesg=1"
+ }
+}
