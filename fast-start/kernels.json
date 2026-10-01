@@ -1,0 +1,255 @@
+{
+ "fc_cold_initramfs__tiny": {
+  "vmm": "fc",
+  "kind": "cold",
+  "kernel": "tiny",
+  "initrd": "tiny",
+  "huge": true,
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0"
+ },
+ "fc_cold_ext4__tiny": {
+  "vmm": "fc",
+  "kind": "cold",
+  "kernel": "tiny",
+  "rootfs": "ubuntu",
+  "huge": true,
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0 init=/fastinit"
+ },
+ "fc_cold_prespawned__tiny": {
+  "vmm": "fc",
+  "kind": "cold",
+  "kernel": "tiny",
+  "initrd": "tiny",
+  "huge": true,
+  "prespawn": true,
+  "no_seccomp": true,
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0"
+ },
+ "ch_cold_initramfs__tiny": {
+  "vmm": "ch",
+  "kind": "cold",
+  "kernel": "tiny",
+  "initrd": "tiny",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0"
+ },
+ "ch_cold_ext4__tiny": {
+  "vmm": "ch",
+  "kind": "cold",
+  "kernel": "tiny",
+  "rootfs": "ubuntu",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0 root=/dev/vda ro init=/fastinit"
+ },
+ "ch_cold_prespawned__tiny": {
+  "vmm": "ch",
+  "kind": "cold",
+  "kernel": "tiny",
+  "initrd": "tiny",
+  "prespawn": true,
+  "seccomp": "false",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0"
+ },
+ "fc_warm_restore__tiny": {
+  "vmm": "fc",
+  "kind": "warm",
+  "kernel": "tiny",
+  "initrd": "tiny",
+  "snapdir": "/mnt/vmbench-hugetmp/snap",
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0"
+ },
+ "fc_warm_prespawned__tiny": {
+  "vmm": "fc",
+  "kind": "warm",
+  "kernel": "tiny",
+  "initrd": "tiny",
+  "snapdir": "/mnt/vmbench-hugetmp/snap",
+  "prespawn": true,
+  "no_seccomp": true,
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0"
+ },
+ "fc_warm_paused__tiny": {
+  "vmm": "fc",
+  "kind": "warm",
+  "kernel": "tiny",
+  "initrd": "tiny",
+  "huge": true,
+  "prespawn": "paused",
+  "uffd_populate": true,
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0"
+ },
+ "ch_warm_restore__tiny": {
+  "vmm": "ch",
+  "kind": "warm",
+  "kernel": "tiny",
+  "initrd": "tiny",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0"
+ },
+ "ch_warm_prespawned__tiny": {
+  "vmm": "ch",
+  "kind": "warm",
+  "kernel": "tiny",
+  "initrd": "tiny",
+  "prespawn": true,
+  "seccomp": "false",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0"
+ },
+ "ch_warm_paused__tiny": {
+  "vmm": "ch",
+  "kind": "warm",
+  "kernel": "tiny",
+  "initrd": "tiny",
+  "prespawn": "paused",
+  "restore_mode": "copy",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0"
+ },
+ "fc_cold_initramfs__full": {
+  "vmm": "fc",
+  "kind": "cold",
+  "kernel": "full",
+  "initrd": "tiny",
+  "huge": true,
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0"
+ },
+ "fc_cold_ext4__full": {
+  "vmm": "fc",
+  "kind": "cold",
+  "kernel": "full",
+  "rootfs": "ubuntu",
+  "huge": true,
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0 init=/fastinit"
+ },
+ "fc_cold_prespawned__full": {
+  "vmm": "fc",
+  "kind": "cold",
+  "kernel": "full",
+  "initrd": "tiny",
+  "huge": true,
+  "prespawn": true,
+  "no_seccomp": true,
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0"
+ },
+ "ch_cold_initramfs__full": {
+  "vmm": "ch",
+  "kind": "cold",
+  "kernel": "full",
+  "initrd": "tiny",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0"
+ },
+ "ch_cold_ext4__full": {
+  "vmm": "ch",
+  "kind": "cold",
+  "kernel": "full",
+  "rootfs": "ubuntu",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0 root=/dev/vda ro init=/fastinit"
+ },
+ "ch_cold_prespawned__full": {
+  "vmm": "ch",
+  "kind": "cold",
+  "kernel": "full",
+  "initrd": "tiny",
+  "prespawn": true,
+  "seccomp": "false",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0"
+ },
+ "fc_warm_restore__full": {
+  "vmm": "fc",
+  "kind": "warm",
+  "kernel": "full",
+  "initrd": "tiny",
+  "snapdir": "/mnt/vmbench-hugetmp/snap",
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0"
+ },
+ "fc_warm_prespawned__full": {
+  "vmm": "fc",
+  "kind": "warm",
+  "kernel": "full",
+  "initrd": "tiny",
+  "snapdir": "/mnt/vmbench-hugetmp/snap",
+  "prespawn": true,
+  "no_seccomp": true,
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0"
+ },
+ "fc_warm_paused__full": {
+  "vmm": "fc",
+  "kind": "warm",
+  "kernel": "full",
+  "initrd": "tiny",
+  "huge": true,
+  "prespawn": "paused",
+  "uffd_populate": true,
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0"
+ },
+ "ch_warm_restore__full": {
+  "vmm": "ch",
+  "kind": "warm",
+  "kernel": "full",
+  "initrd": "tiny",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0"
+ },
+ "ch_warm_prespawned__full": {
+  "vmm": "ch",
+  "kind": "warm",
+  "kernel": "full",
+  "initrd": "tiny",
+  "prespawn": true,
+  "seccomp": "false",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0"
+ },
+ "ch_warm_paused__full": {
+  "vmm": "ch",
+  "kind": "warm",
+  "kernel": "full",
+  "initrd": "tiny",
+  "prespawn": "paused",
+  "restore_mode": "copy",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0"
+ },
+ "fc_cold_initramfs__full-mit": {
+  "vmm": "fc",
+  "kind": "cold",
+  "kernel": "full-mit",
+  "initrd": "tiny",
+  "huge": true,
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0"
+ },
+ "fc_cold_ext4__full-mit": {
+  "vmm": "fc",
+  "kind": "cold",
+  "kernel": "full-mit",
+  "rootfs": "ubuntu",
+  "huge": true,
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0 init=/fastinit"
+ },
+ "fc_cold_prespawned__full-mit": {
+  "vmm": "fc",
+  "kind": "cold",
+  "kernel": "full-mit",
+  "initrd": "tiny",
+  "huge": true,
+  "prespawn": true,
+  "no_seccomp": true,
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0"
+ },
+ "ch_cold_initramfs__full-mit": {
+  "vmm": "ch",
+  "kind": "cold",
+  "kernel": "full-mit",
+  "initrd": "tiny",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0"
+ },
+ "ch_cold_ext4__full-mit": {
+  "vmm": "ch",
+  "kind": "cold",
+  "kernel": "full-mit",
+  "rootfs": "ubuntu",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0 root=/dev/vda ro init=/fastinit"
+ },
+ "ch_cold_prespawned__full-mit": {
+  "vmm": "ch",
+  "kind": "cold",
+  "kernel": "full-mit",
+  "initrd": "tiny",
+  "prespawn": true,
+  "seccomp": "false",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0"
+ }
+}

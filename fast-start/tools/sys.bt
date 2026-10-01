@@ -1,0 +1,14 @@
+tracepoint:sched:sched_process_exec /comm == "firecracker" || comm == "cloud-hyperviso"/ { @vmm[pid] = 1; @t_exec[pid] = nsecs; printf("EV exec %d %lld\n", pid, nsecs); }
+tracepoint:raw_syscalls:sys_enter /@vmm[pid]/ { @s[tid] = nsecs; @id[tid] = args->id; @arg1[tid] = args->args[1]; }
+tracepoint:raw_syscalls:sys_exit /@vmm[pid] && @s[tid]/ {
+  $d = nsecs - @s[tid];
+  if (@id[tid] == 16) { @ioctl_ns[pid, @arg1[tid]] = sum($d); @ioctl_n[pid, @arg1[tid]] = count(); }
+  else { @sys_ns[pid, @id[tid]] = sum($d); @sys_n[pid, @id[tid]] = count(); }
+  if ($d > 200000 && @id[tid] != 202 && @id[tid] != 281 && @id[tid] != 232 && !(@id[tid] == 16 && @arg1[tid] == 0xae80)) { printf("SLOW %d %lld us tid=%d comm=%s sys=%d arg1=%lx dur_us=%lld\n", pid, (@s[tid] - @t_exec[pid])/1000, tid, comm, @id[tid], @arg1[tid], $d/1000); }
+  delete(@s, tid);
+}
+tracepoint:kvm:kvm_page_fault /@vmm[pid]/ { @kvm_pf[pid] = count(); }
+tracepoint:exceptions:page_fault_user /@vmm[pid]/ { @user_pf[pid] = count(); }
+kprobe:handle_userfault /@vmm[pid]/ { @uffd[pid] = count(); }
+tracepoint:sched:sched_process_exit /@vmm[pid] && tid == pid/ { printf("EV exit %d %lld\n", pid, nsecs); }
+END { clear(@s); clear(@id); clear(@arg1); clear(@vmm); clear(@t_exec); }
