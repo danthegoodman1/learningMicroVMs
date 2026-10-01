@@ -1,0 +1,6 @@
+kprobe:kvm_vm_ioctl_create_vcpu /comm == "firecracker"/ { @in[tid] = nsecs; }
+kretprobe:kvm_vm_ioctl_create_vcpu /@in[tid]/ { printf("create_vcpu %d us\n", (nsecs - @in[tid]) / 1000); delete(@in, tid); }
+profile:hz:9999 /@in[tid]/ { @oncpu[kstack(8)] = count(); }
+tracepoint:sched:sched_switch /@in[tid] && args->prev_pid == tid/ { @off[tid] = nsecs; @offstack[kstack(16)] = count(); }
+tracepoint:sched:sched_switch /@off[args->next_pid]/ { @offns = sum(nsecs - @off[args->next_pid]); delete(@off, args->next_pid); }
+END { clear(@in); clear(@off); }

@@ -1,0 +1,9 @@
+tracepoint:sched:sched_process_exec /comm == "firecracker" || comm == "cloud-hyperviso"/ { @vmm = pid; printf("EV exec %lld\n", nsecs); @first_run = 0; @pf = 0; @exits = 0; @pio = 0; @mmio = 0; }
+tracepoint:syscalls:sys_enter_ioctl /pid == @vmm && args->cmd == 0xAE01/ { printf("EV create_vm %lld\n", nsecs); }
+tracepoint:syscalls:sys_enter_ioctl /pid == @vmm && args->cmd == 0xAE80 && @first_run == 0/ { @first_run = 1; printf("EV first_kvm_run %lld\n", nsecs); }
+tracepoint:kvm:kvm_pio /pid == @vmm && (args->port == 0x80 || args->port == 0x3f0) && args->rw == 1/ { printf("EV pio_%x_%x %lld\n", args->port, args->val, nsecs); }
+tracepoint:kvm:kvm_page_fault /pid == @vmm/ { @pf = @pf + 1; }
+tracepoint:kvm:kvm_exit /pid == @vmm/ { @exits = @exits + 1; @reason[args->exit_reason] = count(); }
+tracepoint:kvm:kvm_pio /pid == @vmm/ { @pio = @pio + 1; }
+tracepoint:kvm:kvm_mmio /pid == @vmm/ { @mmio = @mmio + 1; }
+tracepoint:sched:sched_process_exit /pid == @vmm && tid == pid/ { printf("EV exit %lld pf=%lld exits=%lld pio=%lld mmio=%lld\n", nsecs, @pf, @exits, @pio, @mmio); print(@reason); clear(@reason); }

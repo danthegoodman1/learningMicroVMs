@@ -58,3 +58,6 @@ qemu/**/*.network
 qemu/**/work/
 qemu/**/shared/
 memory-hotplug/work/qemu/
+
+fast-start/work/
+fast-start/**/__pycache__/

@@ -12,11 +12,21 @@ require_cmd() {
     fi
 }
 
+# CH_VERSION and CH_KERNEL_TAG pin release tags (e.g. v53.0 and
+# ch-release-v6.16.9-20260508); unset, the latest releases are used.
+CH_VERSION="${CH_VERSION:-}"
+CH_KERNEL_TAG="${CH_KERNEL_TAG:-}"
+
 github_asset_url() {
     local repo="$1"
     local asset="$2"
+    local tag="${3:-}"
+    local release="latest"
+    if [ -n "$tag" ]; then
+        release="tags/$tag"
+    fi
 
-    curl -fsSL "https://api.github.com/repos/${repo}/releases/latest" \
+    curl -fsSL "https://api.github.com/repos/${repo}/releases/${release}" \
         | python3 -c '
 import json
 import sys
@@ -73,14 +83,26 @@ case "$ARCH" in
         ;;
 esac
 
-download_if_missing "$(github_asset_url cloud-hypervisor/cloud-hypervisor "$CH_ASSET")" cloud-hypervisor
+# A pinned version replaces binaries of any other version.
+if [ -n "$CH_VERSION" ] && [ -x cloud-hypervisor ] \
+    && [ "$(./cloud-hypervisor --version | awk 'NR == 1 { print $2 }')" != "$CH_VERSION" ]; then
+    rm -f cloud-hypervisor ch-remote
+fi
+if [ -n "$CH_KERNEL_TAG" ] && [ "$(cat "$KERNEL_OUTPUT.tag" 2>/dev/null)" != "$CH_KERNEL_TAG" ]; then
+    rm -f "$KERNEL_OUTPUT"
+fi
+
+download_if_missing "$(github_asset_url cloud-hypervisor/cloud-hypervisor "$CH_ASSET" "$CH_VERSION")" cloud-hypervisor
 chmod +x cloud-hypervisor
 
-download_if_missing "$(github_asset_url cloud-hypervisor/cloud-hypervisor "$CH_REMOTE_ASSET")" ch-remote
+download_if_missing "$(github_asset_url cloud-hypervisor/cloud-hypervisor "$CH_REMOTE_ASSET" "$CH_VERSION")" ch-remote
 chmod +x ch-remote
 
-download_if_missing "$(github_asset_url cloud-hypervisor/linux "$KERNEL_ASSET")" "$KERNEL_OUTPUT"
+download_if_missing "$(github_asset_url cloud-hypervisor/linux "$KERNEL_ASSET" "$CH_KERNEL_TAG")" "$KERNEL_OUTPUT"
 chmod 600 "$KERNEL_OUTPUT"
+if [ -n "$CH_KERNEL_TAG" ]; then
+    echo "$CH_KERNEL_TAG" > "$KERNEL_OUTPUT.tag"
+fi
 
 download_if_missing "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/${CI_VERSION}/${ARCH}/ubuntu-22.04.ext4" ubuntu-22.04.ext4
 download_if_missing "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/${CI_VERSION}/${ARCH}/ubuntu-22.04.id_rsa" ubuntu-22.04.id_rsa

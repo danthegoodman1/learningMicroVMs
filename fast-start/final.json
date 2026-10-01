@@ -1,0 +1,256 @@
+{
+ "fc_cold_1_stock510_console": {
+  "vmm": "fc",
+  "kind": "cold",
+  "kernel": "fc510",
+  "rootfs": "ubuntu",
+  "cmdline": "reboot=k panic=1 pci=off console=ttyS0 init=/fastinit"
+ },
+ "fc_cold_2_stock510_noconsole": {
+  "vmm": "fc",
+  "kind": "cold",
+  "kernel": "fc510",
+  "rootfs": "ubuntu",
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0 init=/fastinit"
+ },
+ "fc_cold_3_stock61_i8042": {
+  "vmm": "fc",
+  "kind": "cold",
+  "kernel": "fc61",
+  "rootfs": "ubuntu",
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0 i8042.noaux i8042.nomux i8042.nopnp i8042.dumbkbd init=/fastinit"
+ },
+ "fc_cold_4_hugepages": {
+  "vmm": "fc",
+  "kind": "cold",
+  "kernel": "fc61",
+  "rootfs": "ubuntu",
+  "huge": true,
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0 i8042.noaux i8042.nomux i8042.nopnp i8042.dumbkbd init=/fastinit"
+ },
+ "fc_cold_5_initramfs": {
+  "vmm": "fc",
+  "kind": "cold",
+  "kernel": "fc61",
+  "initrd": "tiny",
+  "huge": true,
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0 i8042.noaux i8042.nomux i8042.nopnp i8042.dumbkbd"
+ },
+ "fc_cold_6_trimmed_kernel": {
+  "vmm": "fc",
+  "kind": "cold",
+  "kernel": "min",
+  "initrd": "tiny",
+  "huge": true,
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0"
+ },
+ "fc_cold_6b_trimmed_kernel_ext4": {
+  "vmm": "fc",
+  "kind": "cold",
+  "kernel": "min",
+  "rootfs": "ubuntu",
+  "huge": true,
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0 init=/fastinit"
+ },
+ "fc_cold_7_tiny_kernel": {
+  "vmm": "fc",
+  "kind": "cold",
+  "kernel": "tiny",
+  "initrd": "tiny",
+  "huge": true,
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0"
+ },
+ "fc_cold_7b_tiny_kernel_ext4": {
+  "vmm": "fc",
+  "kind": "cold",
+  "kernel": "tiny",
+  "rootfs": "ubuntu",
+  "huge": true,
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0 init=/fastinit"
+ },
+ "fc_cold_8_prespawned": {
+  "vmm": "fc",
+  "kind": "cold",
+  "kernel": "tiny",
+  "initrd": "tiny",
+  "huge": true,
+  "prespawn": true,
+  "no_seccomp": true,
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0"
+ },
+ "ch_cold_1_stock616_console": {
+  "vmm": "ch",
+  "kind": "cold",
+  "kernel": "ch616",
+  "rootfs": "ubuntu",
+  "console_log": true,
+  "cmdline": "reboot=k panic=1 console=ttyS0 root=/dev/vda ro init=/fastinit"
+ },
+ "ch_cold_2_stock616_noconsole": {
+  "vmm": "ch",
+  "kind": "cold",
+  "kernel": "ch616",
+  "rootfs": "ubuntu",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0 root=/dev/vda ro init=/fastinit"
+ },
+ "ch_cold_3_fc61_kernel": {
+  "vmm": "ch",
+  "kind": "cold",
+  "kernel": "fc61",
+  "rootfs": "ubuntu",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0 root=/dev/vda ro init=/fastinit"
+ },
+ "ch_cold_4_initramfs": {
+  "vmm": "ch",
+  "kind": "cold",
+  "kernel": "fc61",
+  "initrd": "tiny",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0"
+ },
+ "ch_cold_5_trimmed_kernel": {
+  "vmm": "ch",
+  "kind": "cold",
+  "kernel": "min",
+  "initrd": "tiny",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0"
+ },
+ "ch_cold_5b_trimmed_kernel_ext4": {
+  "vmm": "ch",
+  "kind": "cold",
+  "kernel": "min",
+  "rootfs": "ubuntu",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0 root=/dev/vda ro init=/fastinit"
+ },
+ "ch_cold_6_tiny_kernel": {
+  "vmm": "ch",
+  "kind": "cold",
+  "kernel": "tiny",
+  "initrd": "tiny",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0"
+ },
+ "ch_cold_6b_tiny_kernel_ext4": {
+  "vmm": "ch",
+  "kind": "cold",
+  "kernel": "tiny",
+  "rootfs": "ubuntu",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0 root=/dev/vda ro init=/fastinit"
+ },
+ "ch_cold_7_prespawned": {
+  "vmm": "ch",
+  "kind": "cold",
+  "kernel": "tiny",
+  "initrd": "tiny",
+  "prespawn": true,
+  "seccomp": "false",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0"
+ },
+ "fc_warm_1_stock61_disk_evicted": {
+  "vmm": "fc",
+  "kind": "warm",
+  "kernel": "fc61",
+  "rootfs": "ubuntu",
+  "evict": true,
+  "snapdir": "disk",
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0 i8042.noaux i8042.nomux i8042.nopnp i8042.dumbkbd init=/fastinit"
+ },
+ "fc_warm_2_stock61_tmpfs": {
+  "vmm": "fc",
+  "kind": "warm",
+  "kernel": "fc61",
+  "rootfs": "ubuntu",
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0 i8042.noaux i8042.nomux i8042.nopnp i8042.dumbkbd init=/fastinit"
+ },
+ "fc_warm_3_tiny_initramfs": {
+  "vmm": "fc",
+  "kind": "warm",
+  "kernel": "tiny",
+  "initrd": "tiny",
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0"
+ },
+ "fc_warm_4_thp_tmpfs": {
+  "vmm": "fc",
+  "kind": "warm",
+  "kernel": "tiny",
+  "initrd": "tiny",
+  "snapdir": "/mnt/vmbench-hugetmp/snap",
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0"
+ },
+ "fc_warm_5_prespawned": {
+  "vmm": "fc",
+  "kind": "warm",
+  "kernel": "tiny",
+  "initrd": "tiny",
+  "snapdir": "/mnt/vmbench-hugetmp/snap",
+  "prespawn": true,
+  "no_seccomp": true,
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0"
+ },
+ "fc_warm_6_paused_pool": {
+  "vmm": "fc",
+  "kind": "warm",
+  "kernel": "tiny",
+  "initrd": "tiny",
+  "snapdir": "/mnt/vmbench-hugetmp/snap",
+  "prespawn": "paused",
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0"
+ },
+ "fc_warm_7_paused_pool_huge_prefault": {
+  "vmm": "fc",
+  "kind": "warm",
+  "kernel": "tiny",
+  "initrd": "tiny",
+  "huge": true,
+  "prespawn": "paused",
+  "uffd_populate": true,
+  "cmdline": "reboot=k panic=1 pci=off quiet 8250.nr_uarts=0"
+ },
+ "ch_warm_1_stock61_disk_evicted": {
+  "vmm": "ch",
+  "kind": "warm",
+  "kernel": "fc61",
+  "rootfs": "ubuntu",
+  "evict": true,
+  "snapdir": "disk",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0 root=/dev/vda ro init=/fastinit"
+ },
+ "ch_warm_2_stock61_tmpfs": {
+  "vmm": "ch",
+  "kind": "warm",
+  "kernel": "fc61",
+  "rootfs": "ubuntu",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0 root=/dev/vda ro init=/fastinit"
+ },
+ "ch_warm_2b_copy_mode": {
+  "vmm": "ch",
+  "kind": "warm",
+  "kernel": "fc61",
+  "rootfs": "ubuntu",
+  "restore_mode": "copy",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0 root=/dev/vda ro init=/fastinit"
+ },
+ "ch_warm_3_tiny_initramfs": {
+  "vmm": "ch",
+  "kind": "warm",
+  "kernel": "tiny",
+  "initrd": "tiny",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0"
+ },
+ "ch_warm_4_prespawned": {
+  "vmm": "ch",
+  "kind": "warm",
+  "kernel": "tiny",
+  "initrd": "tiny",
+  "prespawn": true,
+  "seccomp": "false",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0"
+ },
+ "ch_warm_5_paused_pool_copy": {
+  "vmm": "ch",
+  "kind": "warm",
+  "kernel": "tiny",
+  "initrd": "tiny",
+  "prespawn": "paused",
+  "restore_mode": "copy",
+  "cmdline": "reboot=k panic=1 quiet 8250.nr_uarts=0"
+ }
+}
